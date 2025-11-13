@@ -41,7 +41,7 @@ export const authOptions: NextAuthOptions = {
 
         const userDoc = user as IUser;
         return {
-          id: userDoc._id.toString(),
+          id: String(userDoc._id),
           email: userDoc.email,
           name: userDoc.name,
           role: userDoc.role,
