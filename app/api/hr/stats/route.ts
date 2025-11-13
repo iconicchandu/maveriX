@@ -9,7 +9,12 @@ export async function GET() {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session || ((session.user as any).role !== 'hr' && (session.user as any).role !== 'admin')) {
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const role = (session.user as any).role;
+    if (role !== 'hr' && role !== 'admin') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
