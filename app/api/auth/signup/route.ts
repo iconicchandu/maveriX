@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
         existingUser.verificationTokenExpiry = verificationTokenExpiry;
         await existingUser.save();
 
-        await sendVerificationEmail(existingUser.email, verificationToken);
+        await sendVerificationEmail(existingUser.email, verificationToken, existingUser.name);
 
         return NextResponse.json({
           message: 'Verification email sent. Please check your inbox.',
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
 
     await user.save();
 
-    await sendVerificationEmail(user.email, verificationToken);
+    await sendVerificationEmail(user.email, verificationToken, user.name);
 
     return NextResponse.json({
       message: 'Verification email sent. Please check your inbox.',

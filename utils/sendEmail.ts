@@ -26,7 +26,7 @@ function getFromEmail(): string {
   return fromEmail;
 }
 
-export async function sendVerificationEmail(email: string, name: string, token: string) {
+export async function sendVerificationEmail(email: string, token: string, name?: string) {
   const verificationUrl = `${process.env.NEXT_PUBLIC_BASE_URL}/verify?token=${token}`;
 
   const mailOptions = {

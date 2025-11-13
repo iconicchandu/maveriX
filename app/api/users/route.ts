@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
 
     await user.save();
 
-    await sendVerificationEmail(user.email, verificationToken);
+    await sendVerificationEmail(user.email, verificationToken, user.name);
 
     return NextResponse.json({
       message: 'User created successfully. Verification email sent.',
