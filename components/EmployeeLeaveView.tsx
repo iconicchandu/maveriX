@@ -31,6 +31,8 @@ interface Leave {
     name: string;
   };
   carryForward?: boolean;
+  createdAt: string | Date;
+  updatedAt?: string | Date;
 }
 
 interface EmployeeLeaveViewProps {
@@ -295,7 +297,7 @@ export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: Em
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <div className="text-sm text-gray-900 font-secondary">
-                          {format(new Date(leave.createdAt), 'MMM dd, yyyy')}
+                          {leave.createdAt ? format(new Date(leave.createdAt), 'MMM dd, yyyy') : 'N/A'}
                         </div>
                       </td>
                     </motion.tr>
