@@ -232,3 +232,43 @@ select option {
   background: rgba(255, 255, 255, 0.5);
 }
 
+/* Birthday Celebration Animations */
+@keyframes bounce-celebration {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes pulse-celebration {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.05);
+  }
+}
+
+@keyframes confetti-fall {
+  0% {
+    transform: translateY(-100vh) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(100vh) rotate(720deg);
+    opacity: 0;
+  }
+}
+
+.animate-bounce-celebration {
+  animation: bounce-celebration 1s ease-in-out infinite;
+}
+
+.animate-pulse-celebration {
+  animation: pulse-celebration 2s ease-in-out infinite;
+}
+

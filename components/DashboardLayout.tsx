@@ -19,6 +19,7 @@ import {
   User,
   UserCog,
   UserCircle,
+  MessageSquare,
 } from 'lucide-react';
 import Logo from './Logo';
 import UserAvatar from './UserAvatar';
@@ -64,6 +65,7 @@ export default function DashboardLayout({ children, role }: DashboardLayoutProps
 
   const adminMenu = [
     { name: 'Dashboard', href: '/admin', icon: LayoutDashboard },
+    { name: 'Feed', href: '/admin/feed', icon: MessageSquare },
     { name: 'Employees', href: '/admin/employees', icon: Users },
     { name: 'Team Management', href: '/admin/teams', icon: UserCog },
     { name: 'Leave Management', href: '/admin/leaves', icon: Calendar },
@@ -74,6 +76,7 @@ export default function DashboardLayout({ children, role }: DashboardLayoutProps
 
   const hrMenu = [
     { name: 'Dashboard', href: '/hr', icon: LayoutDashboard },
+    { name: 'Feed', href: '/hr/feed', icon: MessageSquare },
     { name: 'Employees', href: '/hr/employees', icon: Users },
     { name: 'Team Management', href: '/hr/teams', icon: UserCog },
     { name: 'Leave Management', href: '/hr/leaves', icon: Calendar },
@@ -84,6 +87,7 @@ export default function DashboardLayout({ children, role }: DashboardLayoutProps
 
   const employeeMenu = [
     { name: 'Dashboard', href: '/employee', icon: LayoutDashboard },
+    { name: 'Feed', href: '/employee/feed', icon: MessageSquare },
     { name: 'Attendance', href: '/employee/attendance', icon: Clock },
     { name: 'Leave Management', href: '/employee/leaves', icon: Calendar },
     { name: 'Salary Slips', href: '/employee/finance', icon: DollarSign },

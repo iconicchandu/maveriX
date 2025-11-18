@@ -16,11 +16,15 @@ import {
   Wallet,
   CreditCard,
   Building2,
+  Edit,
+  Trash2,
+  IndianRupee,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import UserAvatar from './UserAvatar';
 import { useToast } from '@/contexts/ToastContext';
 import LoadingDots from './LoadingDots';
+import DeleteConfirmationModal from './DeleteConfirmationModal';
 
 interface Finance {
   _id: string;
@@ -58,7 +62,12 @@ export default function FinanceManagement({
   const [finances, setFinances] = useState<Finance[]>(initialFinances);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [showModal, setShowModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [editingFinance, setEditingFinance] = useState<Finance | null>(null);
+  const [deletingFinance, setDeletingFinance] = useState<Finance | null>(null);
   const [loading, setLoading] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [employeeSearchTerm, setEmployeeSearchTerm] = useState('');
   const [employeeDropdownOpen, setEmployeeDropdownOpen] = useState(false);
@@ -68,6 +77,12 @@ export default function FinanceManagement({
   const [formData, setFormData] = useState({
     userId: '',
     baseSalary: '',
+  });
+
+  const [editFormData, setEditFormData] = useState({
+    baseSalary: '',
+    month: '',
+    year: '',
   });
 
   const fetchEmployees = useCallback(async () => {
@@ -134,6 +149,36 @@ export default function FinanceManagement({
     setEmployeeSearchTerm('');
   };
 
+  const handleOpenEditModal = (finance: Finance) => {
+    setEditingFinance(finance);
+    setEditFormData({
+      baseSalary: finance.baseSalary.toString(),
+      month: finance.month.toString(),
+      year: finance.year.toString(),
+    });
+    setShowEditModal(true);
+  };
+
+  const handleCloseEditModal = () => {
+    setShowEditModal(false);
+    setEditingFinance(null);
+    setEditFormData({
+      baseSalary: '',
+      month: '',
+      year: '',
+    });
+  };
+
+  const handleOpenDeleteModal = (finance: Finance) => {
+    setDeletingFinance(finance);
+    setShowDeleteModal(true);
+  };
+
+  const handleCloseDeleteModal = () => {
+    setShowDeleteModal(false);
+    setDeletingFinance(null);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -161,7 +206,7 @@ export default function FinanceManagement({
 
       toast.success('Salary allocated successfully');
       handleCloseModal();
-      
+
       // Refresh finances
       const refreshRes = await fetch('/api/finance');
       const refreshData = await refreshRes.json();
@@ -172,6 +217,81 @@ export default function FinanceManagement({
     } catch (err: any) {
       toast.error(err.message || 'An error occurred');
       setLoading(false);
+    }
+  };
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingFinance) return;
+
+    setLoading(true);
+
+    try {
+      const res = await fetch(`/api/finance/${editingFinance._id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          baseSalary: parseFloat(editFormData.baseSalary),
+          month: parseInt(editFormData.month),
+          year: parseInt(editFormData.year),
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        toast.error(data.error || 'Failed to update salary');
+        setLoading(false);
+        return;
+      }
+
+      toast.success('Salary updated successfully');
+      handleCloseEditModal();
+
+      // Refresh finances
+      const refreshRes = await fetch('/api/finance');
+      const refreshData = await refreshRes.json();
+      if (refreshRes.ok) {
+        setFinances(refreshData.finances || []);
+      }
+      setLoading(false);
+    } catch (err: any) {
+      toast.error(err.message || 'An error occurred');
+      setLoading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deletingFinance) return;
+
+    setDeleteLoading(true);
+
+    try {
+      const res = await fetch(`/api/finance/${deletingFinance._id}`, {
+        method: 'DELETE',
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        toast.error(data.error || 'Failed to delete salary record');
+        setDeleteLoading(false);
+        return;
+      }
+
+      toast.success('Salary record deleted successfully');
+      handleCloseDeleteModal();
+
+      // Refresh finances
+      const refreshRes = await fetch('/api/finance');
+      const refreshData = await refreshRes.json();
+      if (refreshRes.ok) {
+        setFinances(refreshData.finances || []);
+      }
+      setDeleteLoading(false);
+    } catch (err: any) {
+      toast.error(err.message || 'An error occurred');
+      setDeleteLoading(false);
     }
   };
 
@@ -324,9 +444,25 @@ export default function FinanceManagement({
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-1.5 text-xs text-gray-500 font-secondary">
-                    <Calendar className="w-3.5 h-3.5" />
-                    Monthly Salary
+                  <div className="flex items-center gap-2">
+                    {canEdit && (
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => handleOpenEditModal(finance)}
+                          className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="Edit"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleOpenDeleteModal(finance)}
+                          className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -337,7 +473,7 @@ export default function FinanceManagement({
                       {formatCurrency(finance.baseSalary)}
                     </span>
                   </div>
-                  
+
                   {/* Bank Details */}
                   {canEdit && (
                     <div className="mt-3 pt-3 bg-blue-300/10 rounded-lg p-3">
@@ -416,11 +552,10 @@ export default function FinanceManagement({
                           setEmployeeDropdownOpen(!employeeDropdownOpen);
                           setEmployeeSearchTerm('');
                         }}
-                        className={`w-full px-3 py-2 text-sm text-left border rounded-lg focus:ring-2 focus:ring-primary/50 focus:border-primary/50 outline-none font-secondary bg-white/80 backdrop-blur-sm shadow-sm transition-all flex items-center justify-between ${
-                          formData.userId
+                        className={`w-full px-3 py-2 text-sm text-left border rounded-lg focus:ring-2 focus:ring-primary/50 focus:border-primary/50 outline-none font-secondary bg-white/80 backdrop-blur-sm shadow-sm transition-all flex items-center justify-between ${formData.userId
                             ? 'border-primary/30 text-gray-700'
                             : 'border-gray-300/50 text-gray-500'
-                        }`}
+                          }`}
                       >
                         {selectedEmployee ? (
                           <div className="flex items-center gap-3">
@@ -438,9 +573,8 @@ export default function FinanceManagement({
                           <span>Select Employee</span>
                         )}
                         <ChevronDown
-                          className={`w-4 h-4 text-gray-400 transition-transform ${
-                            employeeDropdownOpen ? 'transform rotate-180' : ''
-                          }`}
+                          className={`w-4 h-4 text-gray-400 transition-transform ${employeeDropdownOpen ? 'transform rotate-180' : ''
+                            }`}
                         />
                       </button>
 
@@ -481,9 +615,8 @@ export default function FinanceManagement({
                                       setEmployeeDropdownOpen(false);
                                       setEmployeeSearchTerm('');
                                     }}
-                                    className={`w-full px-3 py-2 flex items-center gap-2.5 hover:bg-primary/5 transition-colors ${
-                                      formData.userId === emp._id ? 'bg-primary/10' : ''
-                                    }`}
+                                    className={`w-full px-3 py-2 flex items-center gap-2.5 hover:bg-primary/5 transition-colors ${formData.userId === emp._id ? 'bg-primary/10' : ''
+                                      }`}
                                   >
                                     <UserAvatar
                                       name={emp.name}
@@ -507,69 +640,244 @@ export default function FinanceManagement({
                     </div>
                   </div>
 
-                {/* Base Salary */}
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1.5 font-secondary">
-                    Salary (INR) *
-                  </label>
-                  <div className="relative">
-                    <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                    <input
-                      type="number"
-                      step="1"
-                      value={formData.baseSalary}
-                      onChange={(e) => setFormData({ ...formData, baseSalary: e.target.value })}
-                      required
-                      placeholder="0"
-                      className="w-full pl-10 pr-3 py-2 text-sm text-gray-700 border border-gray-300/50 rounded-lg focus:ring-2 focus:ring-primary/50 focus:border-primary/50 outline-none font-secondary bg-white/80 backdrop-blur-sm shadow-sm"
-                    />
+                  {/* Base Salary */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1.5 font-secondary">
+                      Salary (INR) *
+                    </label>
+                    <div className="relative">
+                      <IndianRupee className="absolute z-10 left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                      <input
+                        type="number"
+                        step="1"
+                        value={formData.baseSalary}
+                        onChange={(e) => setFormData({ ...formData, baseSalary: e.target.value })}
+                        required
+                        placeholder="0"
+                        className="w-full pl-10 pr-3 py-2 text-sm text-gray-700 border border-gray-300/50 rounded-lg focus:ring-2 focus:ring-primary/50 focus:border-primary/50 outline-none font-secondary bg-white/80 backdrop-blur-sm shadow-sm"
+                      />
+                    </div>
                   </div>
-                </div>
 
-                {/* Salary Preview */}
-                <div className="bg-gradient-to-r from-primary/10 to-purple-600/10 rounded-lg p-3 border border-primary/20">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm font-semibold text-gray-900 font-primary">
-                      Salary
-                    </span>
-                    <span className="text-xl font-bold text-primary font-primary">
-                      {formatCurrency(parseFloat(formData.baseSalary) || 0)}
-                    </span>
+                  {/* Salary Preview */}
+                  <div className="bg-gradient-to-r from-primary/10 to-purple-600/10 rounded-lg p-3 border border-primary/20">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm font-semibold text-gray-900 font-primary">
+                        Salary
+                      </span>
+                      <span className="text-xl font-bold text-primary font-primary">
+                        {formatCurrency(parseFloat(formData.baseSalary) || 0)}
+                      </span>
+                    </div>
                   </div>
-                </div>
 
-                {/* Action Buttons */}
-                <div className="flex gap-2 pt-3">
-                  <button
-                    type="button"
-                    onClick={handleCloseModal}
-                    className="flex-1 px-4 py-2 text-sm border border-gray-300/50 rounded-lg text-gray-700 hover:bg-gray-50/80 transition-all font-secondary backdrop-blur-sm"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={loading || !formData.userId}
-                    className="flex-1 px-4 py-2 text-sm bg-gradient-to-r from-primary to-purple-600 text-white rounded-lg hover:shadow-lg transition-all disabled:opacity-50 font-secondary flex items-center justify-center gap-2 backdrop-blur-sm"
-                  >
-                    {loading ? (
-                      <>
-                        <LoadingDots size="sm" color="white" />
-                        <span>Allocating...</span>
-                      </>
-                    ) : (
-                      <>
-                        <DollarSign className="w-3.5 h-3.5" />
-                        Allocate Salary
-                      </>
-                    )}
-                  </button>
-                </div>
-              </form>
+                  {/* Action Buttons */}
+                  <div className="flex gap-2 pt-3">
+                    <button
+                      type="button"
+                      onClick={handleCloseModal}
+                      className="flex-1 px-4 py-2 text-sm border border-gray-300/50 rounded-lg text-gray-700 hover:bg-gray-50/80 transition-all font-secondary backdrop-blur-sm"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={loading || !formData.userId}
+                      className="flex-1 px-4 py-2 text-sm bg-gradient-to-r from-primary to-purple-600 text-white rounded-lg hover:shadow-lg transition-all disabled:opacity-50 font-secondary flex items-center justify-center gap-2 backdrop-blur-sm"
+                    >
+                      {loading ? (
+                        <>
+                          <LoadingDots size="sm" color="white" />
+                          <span>Allocating...</span>
+                        </>
+                      ) : (
+                        <>
+                          <DollarSign className="w-3.5 h-3.5" />
+                          Allocate Salary
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
               </motion.div>
-    </div>
+            </div>
           )}
         </AnimatePresence>
+      )}
+
+      {/* Edit Salary Modal */}
+      {canEdit && (
+        <AnimatePresence>
+          {showEditModal && editingFinance && (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                className="bg-white/90 backdrop-blur-xl rounded-xl shadow-2xl border border-white/50 p-5 w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+              >
+                <div className="flex items-center justify-between mb-5">
+                  <h2 className="text-xl font-primary font-bold text-gray-800">
+                    Edit Salary
+                  </h2>
+                  <button
+                    onClick={handleCloseEditModal}
+                    className="text-gray-400 hover:text-gray-600 transition-colors p-1.5 hover:bg-gray-100 rounded-lg"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleEditSubmit} className="space-y-4">
+                  {/* Employee Info (Read-only) */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1.5 font-secondary">
+                      Employee
+                    </label>
+                    <div className="px-3 py-2 text-sm border border-gray-300/50 rounded-lg bg-gray-50/80 font-secondary flex items-center gap-3">
+                      <UserAvatar
+                        name={editingFinance.userId.name}
+                        image={editingFinance.userId.profileImage}
+                        size="sm"
+                      />
+                      <div>
+                        <div className="text-gray-900 font-medium">{editingFinance.userId.name}</div>
+                        <div className="text-xs text-gray-500">{editingFinance.userId.email}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Month */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1.5 font-secondary">
+                      Month *
+                    </label>
+                    <select
+                      value={editFormData.month}
+                      onChange={(e) => setEditFormData({ ...editFormData, month: e.target.value })}
+                      required
+                      className="w-full px-3 py-2 text-sm text-gray-700 border border-gray-300/50 rounded-lg focus:ring-2 focus:ring-primary/50 focus:border-primary/50 outline-none font-secondary bg-white/80 backdrop-blur-sm shadow-sm"
+                    >
+                      {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => (
+                        <option key={month} value={month}>
+                          {getMonthName(month)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Year */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1.5 font-secondary">
+                      Year *
+                    </label>
+                    <input
+                      type="number"
+                      value={editFormData.year}
+                      onChange={(e) => setEditFormData({ ...editFormData, year: e.target.value })}
+                      required
+                      min="2000"
+                      max="2100"
+                      placeholder="2024"
+                      className="w-full px-3 py-2 text-sm text-gray-700 border border-gray-300/50 rounded-lg focus:ring-2 focus:ring-primary/50 focus:border-primary/50 outline-none font-secondary bg-white/80 backdrop-blur-sm shadow-sm"
+                    />
+                  </div>
+
+                  {/* Base Salary */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1.5 font-secondary">
+                      Salary (INR) *
+                    </label>
+                    <div className="relative">
+                      <IndianRupee className="absolute z-10 left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                      <input
+                        type="number"
+                        step="1"
+                        value={editFormData.baseSalary}
+                        onChange={(e) => setEditFormData({ ...editFormData, baseSalary: e.target.value })}
+                        required
+                        placeholder="0"
+                        className="w-full pl-10 pr-3 py-2 text-sm text-gray-700 border border-gray-300/50 rounded-lg focus:ring-2 focus:ring-primary/50 focus:border-primary/50 outline-none font-secondary bg-white/80 backdrop-blur-sm shadow-sm"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Salary Preview */}
+                  <div className="bg-gradient-to-r from-primary/10 to-purple-600/10 rounded-lg p-3 border border-primary/20">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm font-semibold text-gray-900 font-primary">
+                        Salary
+                      </span>
+                      <span className="text-xl font-bold text-primary font-primary">
+                        {formatCurrency(parseFloat(editFormData.baseSalary) || 0)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex gap-2 pt-3">
+                    <button
+                      type="button"
+                      onClick={handleCloseEditModal}
+                      className="flex-1 px-4 py-2 text-sm border border-gray-300/50 rounded-lg text-gray-700 hover:bg-gray-50/80 transition-all font-secondary backdrop-blur-sm"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="flex-1 px-4 py-2 text-sm bg-gradient-to-r from-primary to-purple-600 text-white rounded-lg hover:shadow-lg transition-all disabled:opacity-50 font-secondary flex items-center justify-center gap-2 backdrop-blur-sm"
+                    >
+                      {loading ? (
+                        <>
+                          <LoadingDots size="sm" color="white" />
+                          <span>Updating...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Edit className="w-3.5 h-3.5" />
+                          Update Salary
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {canEdit && deletingFinance && (
+        <DeleteConfirmationModal
+          isOpen={showDeleteModal}
+          onClose={handleCloseDeleteModal}
+          onConfirm={handleDelete}
+          title="Delete Salary Record"
+          message="Are you sure you want to delete this salary record? This action cannot be undone."
+          details={
+            <div className="space-y-1">
+              <div className="flex justify-between">
+                <span className="text-gray-600">Employee:</span>
+                <span className="font-medium text-gray-900">{deletingFinance.userId.name}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Period:</span>
+                <span className="font-medium text-gray-900">
+                  {getMonthName(deletingFinance.month)} {deletingFinance.year}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Salary:</span>
+                <span className="font-medium text-gray-900">
+                  {formatCurrency(deletingFinance.baseSalary)}
+                </span>
+              </div>
+            </div>
+          }
+          loading={deleteLoading}
+        />
       )}
     </>
   );

@@ -96,7 +96,8 @@ export default function UpcomingBirthdays() {
             {birthdays.map((employee, index) => {
               const birthdayText = getBirthdayText(employee.daysUntil);
               const isTodayBirthday = employee.daysUntil === 0;
-              const isMostRecent = index === 0; // First item is the most recent
+              // Today's birthday should be most prominent, then the first upcoming one
+              const isMostRecent = isTodayBirthday || index === 0;
 
               return (
                 <motion.div
@@ -104,10 +105,10 @@ export default function UpcomingBirthdays() {
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ delay: index * 0.05 }}
-                  className={`relative rounded-xl border-2 transition-all duration-300 overflow-visible ${isMostRecent
-                      ? 'p-2 bg-gradient-to-br from-pink-500 via-rose-500 to-orange-500 border-pink-400 shadow-lg shadow-pink-200/50 transform hover:scale-[1.02]'
-                      : isTodayBirthday
-                        ? 'p-2.5 bg-gradient-to-r from-pink-50 to-rose-50 border-pink-200 hover:border-pink-300'
+                  className={`relative rounded-xl border-2 transition-all duration-300 overflow-visible ${isTodayBirthday
+                      ? 'p-2 bg-gradient-to-br from-pink-500 via-rose-500 to-orange-500 border-pink-400 shadow-lg shadow-pink-200/50 transform hover:scale-[1.02] animate-pulse-celebration'
+                      : isMostRecent
+                        ? 'p-2 bg-gradient-to-br from-pink-500 via-rose-500 to-orange-500 border-pink-400 shadow-lg shadow-pink-200/50 transform hover:scale-[1.02]'
                         : 'p-2.5 bg-white border-gray-200/50 hover:border-pink-200'
                     }`}
                 >
@@ -119,7 +120,7 @@ export default function UpcomingBirthdays() {
                         size={isMostRecent ? "lg" : "md"}
                         className="flex-shrink-0"
                       />
-                      {isMostRecent && (
+                      {(isMostRecent || isTodayBirthday) && (
                         <div className="absolute -bottom-1 -right-1 bg-yellow-400 rounded-full p-1">
                           <Gift className="w-3 h-3 text-yellow-900" />
                         </div>

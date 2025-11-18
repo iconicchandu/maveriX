@@ -25,6 +25,8 @@ export async function GET(request: NextRequest) {
       .lean();
 
     const today = new Date();
+    // Set time to midnight for accurate day comparison
+    today.setHours(0, 0, 0, 0);
     const currentYear = today.getFullYear();
 
     // Calculate upcoming birthdays (next 10, regardless of month)
@@ -38,14 +40,17 @@ export async function GET(request: NextRequest) {
 
         // Calculate next birthday
         let nextBirthday = new Date(currentYear, birthMonth, birthDay);
+        nextBirthday.setHours(0, 0, 0, 0);
+        
         if (nextBirthday < today) {
           // Birthday already passed this year, use next year
           nextBirthday = new Date(currentYear + 1, birthMonth, birthDay);
+          nextBirthday.setHours(0, 0, 0, 0);
         }
 
-        const daysUntil = Math.ceil(
-          (nextBirthday.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
-        );
+        // Calculate days until birthday (including today)
+        const timeDiff = nextBirthday.getTime() - today.getTime();
+        const daysUntil = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
 
         return {
           _id: employee._id,

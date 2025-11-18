@@ -7,6 +7,7 @@ import EmployeeTeamInfo from '@/components/EmployeeTeamInfo';
 import EmployeeSearch from '@/components/EmployeeSearch';
 import TimeTrackingWidget from '@/components/TimeTrackingWidget';
 import UpcomingBirthdays from '@/components/UpcomingBirthdays';
+import BirthdayCelebration from '@/components/BirthdayCelebration';
 import { Clock, Calendar, Users, TrendingUp } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useToast } from '@/contexts/ToastContext';
@@ -25,6 +26,7 @@ export default function EmployeeDashboard() {
   });
   const [loading, setLoading] = useState(true);
   const [userProfile, setUserProfile] = useState<any>(null);
+  const [showBirthdayCelebration, setShowBirthdayCelebration] = useState(false);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -72,6 +74,20 @@ export default function EmployeeDashboard() {
       const data = await res.json();
       if (res.ok && data.user) {
         setUserProfile(data.user);
+        
+        // Check if today is the user's birthday
+        if (data.user.dateOfBirth) {
+          const today = new Date();
+          const dob = new Date(data.user.dateOfBirth);
+          const birthMonth = dob.getMonth();
+          const birthDay = dob.getDate();
+          
+          // Check if today matches the birthday (month and day)
+          // Show celebration every time the dashboard is opened/reloaded on birthday
+          if (today.getMonth() === birthMonth && today.getDate() === birthDay) {
+            setShowBirthdayCelebration(true);
+          }
+        }
       }
     } catch (err) {
       console.error('Error fetching user profile:', err);
@@ -87,6 +103,15 @@ export default function EmployeeDashboard() {
 
   return (
     <DashboardLayout role="employee">
+      {/* Birthday Celebration Modal */}
+      {showBirthdayCelebration && userProfile && (
+        <BirthdayCelebration
+          userName={userProfile.name || session?.user?.name || 'Employee'}
+          userImage={userProfile.profileImage || (session?.user as any)?.profileImage}
+          onClose={() => setShowBirthdayCelebration(false)}
+        />
+      )}
+      
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
         <div className="space-y-6 p-4 md:p-6">
           {/* Header */}

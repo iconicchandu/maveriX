@@ -7,7 +7,7 @@ import { User } from 'lucide-react';
 interface UserAvatarProps {
   name?: string | null;
   image?: string | null;
-  size?: 'sm' | 'md' | 'lg' | 'xl';
+  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
   className?: string;
 }
 
@@ -15,6 +15,7 @@ export default function UserAvatar({ name, image, size = 'md', className = '' }:
   const [imageError, setImageError] = useState(false);
   
   const sizes = {
+    xs: { container: 'w-4 h-4', text: 'text-[10px]', icon: 'w-2 h-2' },
     sm: { container: 'w-6 h-6', text: 'text-xs', icon: 'w-3 h-3' },
     md: { container: 'w-8 h-8', text: 'text-sm', icon: 'w-4 h-4' },
     lg: { container: 'w-10 h-10', text: 'text-base', icon: 'w-5 h-5' },
