@@ -61,6 +61,13 @@ export async function POST(request: NextRequest) {
     user.emailVerified = true;
     user.verificationToken = undefined;
     user.verificationTokenExpiry = undefined;
+    // Explicitly set approved status
+    // Admin and HR are auto-approved, employees need admin approval
+    if (user.role === 'employee') {
+      user.approved = false; // Explicitly set to false for employees
+    } else if (user.role === 'admin' || user.role === 'hr') {
+      user.approved = true; // Auto-approve admin and HR
+    }
     await user.save();
 
     return NextResponse.json({

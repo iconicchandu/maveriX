@@ -39,6 +39,11 @@ export const authOptions: NextAuthOptions = {
           throw new Error('Invalid password');
         }
 
+        // For employees, check if they are approved
+        if (user.role === 'employee' && !user.approved) {
+          // Allow login but they'll be redirected to waiting page
+        }
+
         const userDoc = user as IUser;
         return {
           id: String(userDoc._id),
@@ -47,6 +52,7 @@ export const authOptions: NextAuthOptions = {
           role: userDoc.role,
           profileImage: userDoc.profileImage,
           mobileNumber: userDoc.mobileNumber,
+          approved: userDoc.approved || false,
         };
       },
     }),
@@ -58,15 +64,27 @@ export const authOptions: NextAuthOptions = {
         token.role = (user as any).role;
         token.profileImage = (user as any).profileImage;
         token.mobileNumber = (user as any).mobileNumber;
+        token.approved = (user as any).approved;
       } else if (token.id) {
         // Refresh user data from database
         await connectDB();
-        const dbUser = await User.findById(token.id).select('profileImage mobileNumber name');
+        const dbUser = await User.findById(token.id).select('profileImage mobileNumber name approved role');
         if (dbUser) {
           const userDoc = dbUser as IUser;
           token.profileImage = userDoc.profileImage;
           token.mobileNumber = userDoc.mobileNumber;
           token.name = userDoc.name;
+          // Set approved status - be explicit about it
+          if (userDoc.role === 'employee') {
+            // For employees:
+            // - If approved is explicitly true → approved
+            // - If approved is undefined/null (old employees) → treat as approved
+            // - If approved is explicitly false → not approved (new employees)
+            token.approved = userDoc.approved === true || (userDoc.approved !== false && userDoc.approved !== true);
+          } else {
+            // Admin and HR are always approved
+            token.approved = true;
+          }
         }
       }
       return token;
@@ -77,6 +95,7 @@ export const authOptions: NextAuthOptions = {
         (session.user as any).role = token.role;
         (session.user as any).profileImage = token.profileImage;
         (session.user as any).mobileNumber = token.mobileNumber;
+        (session.user as any).approved = token.approved;
       }
       return session;
     },

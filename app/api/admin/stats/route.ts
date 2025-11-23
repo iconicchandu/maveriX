@@ -24,7 +24,12 @@ export async function GET() {
     await connectDB();
 
     const [totalEmployees, pendingLeaves, pendingPayments, todayAttendance] = await Promise.all([
-      User.countDocuments({ role: { $ne: 'admin' } }),
+      // Count only employees who have verified email and set password
+      User.countDocuments({ 
+        role: { $ne: 'admin' },
+        emailVerified: true,
+        password: { $exists: true, $ne: null }
+      }),
       Leave.countDocuments({ status: 'pending' }),
       Finance.countDocuments({ status: 'pending' }),
       Attendance.countDocuments({ date: new Date() }),

@@ -32,12 +32,12 @@ export default function DeleteConfirmationModal({
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.9 }}
-        className="bg-white rounded-lg shadow-xl w-full max-w-md"
+        className="bg-white/70 backdrop-blur-sm rounded-lg shadow-xl w-full max-w-md"
       >
         <div className="p-6">
           {/* Header */}
           <div className="flex items-start gap-4 mb-4">
-            <div className="flex-shrink-0 w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+            <div className="flex-shrink-0 w-12 h-12 bg-red-200/70 backdrop-blur-sm rounded-full flex items-center justify-center">
               <AlertTriangle className="w-6 h-6 text-red-600" />
             </div>
             <div className="flex-1">
@@ -55,7 +55,7 @@ export default function DeleteConfirmationModal({
 
           {/* Details Section */}
           {details && (
-            <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+            <div className="mb-4 p-3 bg-gray-100/30 rounded-lg border border-gray-200">
               <div className="text-sm font-medium text-gray-700 mb-2 font-secondary">Details:</div>
               <div className="text-sm text-gray-600 font-secondary">{details}</div>
             </div>
@@ -71,9 +71,9 @@ export default function DeleteConfirmationModal({
           )}
 
           {/* Warning Message */}
-          <div className="mb-6 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
-            <p className="text-sm text-yellow-800 font-secondary">
-              <strong>Warning:</strong> This action cannot be undone.
+          <div className="mb-6 p-2 bg-yellow-200/30 rounded-lg">
+            <p className="text-sm text-yellow-700 font-bold text-center">
+              This action cannot be undone.
             </p>
           </div>
 

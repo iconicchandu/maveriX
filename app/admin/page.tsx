@@ -10,6 +10,8 @@ import UserAvatar from '@/components/UserAvatar';
 import { formatDistanceToNow } from 'date-fns';
 import LoadingDots from '@/components/LoadingDots';
 import RecentActivity from '@/components/RecentActivity';
+import AnnouncementManagement from '@/components/AnnouncementManagement';
+import PendingEmployees from '@/components/PendingEmployees';
 
 interface RecentTeam {
   _id: string;
@@ -215,13 +217,31 @@ export default function AdminDashboard() {
             })}
           </div>
 
+          {/* Announcement Management */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4 }}
+          >
+            <AnnouncementManagement />
+          </motion.div>
+
+          {/* Pending Employees */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.5 }}
+          >
+            <PendingEmployees />
+          </motion.div>
+
           {/* Recent Activity and Recent Teams */}
           <div className="flex flex-col lg:flex-row gap-4">
             {/* Recent Activity */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.5 }}
+              transition={{ delay: 0.6 }}
               className="w-full lg:w-[350px]"
             >
               <RecentActivity />
@@ -231,7 +251,7 @@ export default function AdminDashboard() {
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.6 }}
+              transition={{ delay: 0.7 }}
               className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-white/50 w-full lg:w-[350px] h-[500px] flex flex-col"
             >
               <div className="flex items-center justify-between mb-4 flex-shrink-0">

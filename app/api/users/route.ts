@@ -67,6 +67,14 @@ export async function POST(request: NextRequest) {
     const verificationToken = crypto.randomBytes(32).toString('hex');
     const verificationTokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
+    // Explicitly set approved status based on role
+    let approvedStatus = false;
+    if (role === 'admin' || role === 'hr') {
+      approvedStatus = true; // Auto-approve admin and HR
+    } else {
+      approvedStatus = false; // Employees need admin approval
+    }
+
     const user = new User({
       email: email.toLowerCase(),
       name,
@@ -75,6 +83,7 @@ export async function POST(request: NextRequest) {
       verificationToken,
       verificationTokenExpiry,
       emailVerified: false,
+      approved: approvedStatus, // Explicitly set approval status
     });
 
     await user.save();

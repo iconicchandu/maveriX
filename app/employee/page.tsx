@@ -8,6 +8,7 @@ import EmployeeSearch from '@/components/EmployeeSearch';
 import TimeTrackingWidget from '@/components/TimeTrackingWidget';
 import UpcomingBirthdays from '@/components/UpcomingBirthdays';
 import BirthdayCelebration from '@/components/BirthdayCelebration';
+import AnnouncementModal from '@/components/AnnouncementModal';
 import { Clock, Calendar, Users, TrendingUp } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useToast } from '@/contexts/ToastContext';
@@ -27,6 +28,9 @@ export default function EmployeeDashboard() {
   const [loading, setLoading] = useState(true);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [showBirthdayCelebration, setShowBirthdayCelebration] = useState(false);
+  const [announcements, setAnnouncements] = useState<any[]>([]);
+  const [currentAnnouncementIndex, setCurrentAnnouncementIndex] = useState(0);
+  const [showAnnouncement, setShowAnnouncement] = useState(false);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -94,10 +98,41 @@ export default function EmployeeDashboard() {
     }
   };
 
+  const fetchAnnouncements = async () => {
+    try {
+      const res = await fetch('/api/announcements');
+      const data = await res.json();
+      if (res.ok && data.announcements && data.announcements.length > 0) {
+        setAnnouncements(data.announcements);
+        setCurrentAnnouncementIndex(0);
+        setShowAnnouncement(true);
+      }
+    } catch (err) {
+      console.error('Error fetching announcements:', err);
+    }
+  };
+
+  const handleAnnouncementClose = () => {
+    if (currentAnnouncementIndex < announcements.length - 1) {
+      // Show next announcement
+      setCurrentAnnouncementIndex(currentAnnouncementIndex + 1);
+    } else {
+      // All announcements shown
+      setShowAnnouncement(false);
+      setAnnouncements([]);
+    }
+  };
+
+  const handleAnnouncementViewTracked = () => {
+    // Refresh announcements to get updated view counts
+    fetchAnnouncements();
+  };
+
   useEffect(() => {
     if (session) {
       fetchStats();
       fetchUserProfile();
+      fetchAnnouncements();
     }
   }, [session, fetchStats]);
 
@@ -109,6 +144,15 @@ export default function EmployeeDashboard() {
           userName={userProfile.name || session?.user?.name || 'Employee'}
           userImage={userProfile.profileImage || (session?.user as any)?.profileImage}
           onClose={() => setShowBirthdayCelebration(false)}
+        />
+      )}
+
+      {/* Announcement Modal */}
+      {showAnnouncement && announcements.length > 0 && announcements[currentAnnouncementIndex] && (
+        <AnnouncementModal
+          announcement={announcements[currentAnnouncementIndex]}
+          onClose={handleAnnouncementClose}
+          onViewTracked={handleAnnouncementViewTracked}
         />
       )}
       

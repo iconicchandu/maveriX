@@ -9,12 +9,20 @@ export default async function Home() {
   // If user is logged in, redirect to their dashboard
   if (session) {
     const role = (session.user as any).role;
+    const approved = (session.user as any).approved;
+    
     if (role === 'admin') {
       redirect('/admin');
     } else if (role === 'hr') {
       redirect('/hr');
     } else if (role === 'employee') {
-      redirect('/employee');
+      // Redirect to waiting page only if explicitly not approved (false)
+      // If approved is undefined/null, treat as approved (for existing employees)
+      if (approved === false) {
+        redirect('/employee/waiting');
+      } else {
+        redirect('/employee');
+      }
     }
   }
 

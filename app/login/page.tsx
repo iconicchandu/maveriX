@@ -35,10 +35,19 @@ function LoginForm() {
         return;
       }
 
-      // Get user role from session
+      // Get user role and approval status from session
       const res = await fetch('/api/auth/session');
       const session = await res.json();
       const role = session?.user?.role;
+      const approved = session?.user?.approved;
+
+      // Redirect employees to waiting page only if explicitly not approved (false)
+      // If approved is undefined/null, treat as approved (for existing employees)
+      if (role === 'employee' && approved === false) {
+        router.push('/employee/waiting');
+        router.refresh();
+        return;
+      }
 
       const from = searchParams.get('from') || `/${role}`;
       router.push(from);

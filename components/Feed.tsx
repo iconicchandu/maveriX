@@ -408,7 +408,7 @@ export default function Feed() {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-md border border-gray-100 p-6 hover:shadow-lg transition-all duration-300"
+          className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-md border border-gray-100 p-6 hover:shadow-lg transition-all duration-300 relative z-10"
         >
           <div className="flex items-start gap-4 mb-5">
             <div className="relative">
@@ -430,7 +430,7 @@ export default function Feed() {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-3">
-            <div className="relative">
+            <div className="relative z-50">
               <textarea
                 ref={textareaRef}
                 value={content}
@@ -442,7 +442,7 @@ export default function Feed() {
                 className="w-full px-4 py-3 text-sm text-gray-700 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/30 focus:border-primary/50 outline-none font-secondary bg-white/90 backdrop-blur-sm resize-none transition-all placeholder:text-gray-400"
               />
               {content.length > 0 && (
-                <div className="absolute bottom-2 right-2 text-xs text-gray-400 font-secondary bg-white/80 px-2 py-1 rounded">
+                <div className="absolute top-2 right-2 text-xs text-gray-400 font-secondary bg-white/80 px-2 py-1 rounded z-10">
                   {content.length}/5000
                 </div>
               )}
@@ -455,7 +455,7 @@ export default function Feed() {
                     initial={{ opacity: 0, y: -10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10 }}
-                    className="absolute bottom-full left-0 mb-2 w-full max-w-md bg-white rounded-xl shadow-2xl border border-gray-200 z-50 max-h-60 overflow-y-auto"
+                    className="absolute top-full left-0 mt-2 w-full max-w-md bg-white rounded-xl shadow-2xl border border-gray-200 z-[9999] max-h-60 overflow-y-auto"
                   >
                     <div className="p-2">
                       <div className="text-xs text-gray-500 font-secondary px-2 py-1 mb-1">
@@ -485,12 +485,14 @@ export default function Feed() {
                               {user.email}
                             </div>
                           </div>
-                          <div className={`text-xs px-2 py-0.5 rounded-full font-secondary ${user.role === 'admin'
-                              ? 'bg-gradient-to-r from-red-500 to-orange-500 text-white shadow-sm'
-                              : 'bg-primary/10 text-primary'
-                            }`}>
-                            {user.designation || user.role.toUpperCase()}
-                          </div>
+                          {user.designation && (
+                            <div className={`text-xs px-2 py-0.5 rounded-full font-secondary ${user.role === 'admin'
+                                ? 'bg-gradient-to-r from-red-500 to-orange-500 text-white shadow-sm'
+                                : 'bg-primary/10 text-primary'
+                              }`}>
+                              {user.designation}
+                            </div>
+                          )}
                         </button>
                       ))}
                     </div>
@@ -499,10 +501,6 @@ export default function Feed() {
               </AnimatePresence>
             </div>
             <div className="flex items-center justify-between pt-2">
-              <div className="flex items-center gap-2 text-xs text-gray-500 font-secondary">
-                <AtSign className="w-3.5 h-3.5" />
-                <span>Mention someone with @</span>
-              </div>
               <button
                 type="submit"
                 disabled={posting || !content.trim()}
@@ -542,14 +540,14 @@ export default function Feed() {
             </p>
           </motion.div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 relative z-0">
             {posts.map((post, index) => (
               <motion.div
                 key={post._id}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.05 }}
-                className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-md border border-gray-100 p-6 hover:shadow-xl hover:border-gray-200 transition-all duration-300"
+                className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-md border border-gray-100 p-6 hover:shadow-xl hover:border-gray-200 transition-all duration-300 relative z-0"
               >
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-start gap-3 flex-1">
@@ -566,19 +564,12 @@ export default function Feed() {
                         <h3 className="font-primary font-bold text-gray-900 text-base">
                           {post.userId.name}
                         </h3>
-                        {post.userId.designation ? (
+                        {post.userId.designation && (
                           <span className={`text-xs px-2.5 py-1 rounded-full font-secondary font-medium ${post.userId.role === 'admin'
                               ? 'bg-gradient-to-r from-red-500 to-orange-500 text-white shadow-md'
                               : 'bg-gradient-to-r from-primary/10 to-purple-600/10 text-primary'
                             }`}>
                             {post.userId.designation}
-                          </span>
-                        ) : (
-                          <span className={`text-xs px-2.5 py-1 rounded-full font-secondary font-medium ${post.userId.role === 'admin'
-                              ? 'bg-gradient-to-r from-red-500 to-orange-500 text-white shadow-md'
-                              : 'bg-gradient-to-r from-primary/10 to-purple-600/10 text-primary'
-                            }`}>
-                            {post.userId.role.toUpperCase()}
                           </span>
                         )}
                       </div>

@@ -8,6 +8,7 @@ import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import UserAvatar from '@/components/UserAvatar';
 import LoadingDots from '@/components/LoadingDots';
+import AnnouncementManagement from '@/components/AnnouncementManagement';
 
 export default function HRDashboard() {
   const { data: session } = useSession();
@@ -115,6 +116,15 @@ export default function HRDashboard() {
               );
             })}
           </div>
+
+          {/* Announcement Management */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4 }}
+          >
+            <AnnouncementManagement />
+          </motion.div>
         </div>
       </div>
     </DashboardLayout>

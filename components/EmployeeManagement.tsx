@@ -15,7 +15,9 @@ interface Employee {
   role: 'admin' | 'hr' | 'employee';
   designation?: string;
   emailVerified: boolean;
+  approved?: boolean;
   profileImage?: string;
+  createdAt?: string;
 }
 
 interface EmployeeManagementProps {
@@ -176,7 +178,10 @@ export default function EmployeeManagement({ initialEmployees }: EmployeeManagem
                   Designation
                 </th>
                 <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider font-primary">
-                  Status
+                  Email Status
+                </th>
+                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider font-primary">
+                  Approval Status
                 </th>
                 <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider font-primary">
                   Actions
@@ -225,6 +230,23 @@ export default function EmployeeManagement({ initialEmployees }: EmployeeManagem
                       }`}
                     >
                       {employee.emailVerified ? 'Verified' : 'Pending'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <span
+                      className={`px-2 py-0.5 inline-flex text-xs leading-4 font-semibold rounded-full font-secondary ${
+                        employee.approved === true
+                          ? 'bg-green-100 text-green-800'
+                          : employee.emailVerified
+                          ? 'bg-orange-100 text-orange-800'
+                          : 'bg-gray-100 text-gray-800'
+                      }`}
+                    >
+                      {employee.approved === true
+                        ? 'Approved'
+                        : employee.emailVerified
+                        ? 'Pending Approval'
+                        : 'Not Verified'}
                     </span>
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-sm font-medium">

@@ -45,6 +45,8 @@ export async function POST(request: NextRequest) {
       verificationToken,
       verificationTokenExpiry,
       emailVerified: false,
+      role: 'employee', // Explicitly set role
+      approved: false, // Employees need admin approval
     });
 
     await user.save();
