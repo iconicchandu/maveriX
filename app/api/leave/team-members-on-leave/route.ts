@@ -76,9 +76,11 @@ export async function GET(request: NextRequest) {
 
     // Find leaves that overlap with the requested date range
     // A leave overlaps if: (leave.startDate <= end) AND (leave.endDate >= start)
+    // IMPORTANT: Exclude allotted leaves (where allottedBy exists) - these are balance allocations, not actual leave requests
     const overlappingLeaves = await Leave.find({
       userId: { $in: teamMemberIds },
       status: { $in: ['pending', 'approved'] },
+      allottedBy: { $exists: false }, // Exclude allotted leaves - only show actual leave requests
       // Leave starts before or on the end date and ends on or after the start date
       startDate: { $lte: end },
       endDate: { $gte: start },
@@ -112,10 +114,14 @@ export async function GET(request: NextRequest) {
         startDate: leave.startDate,
         endDate: leave.endDate,
         status: leave.status,
+        halfDayType: leave.halfDayType, // Include half-day type if present
+        days: leave.days, // Include days to check if it's a half-day (0.5)
       });
     });
 
-    const teamMembersOnLeave = Array.from(membersOnLeaveMap.values());
+    const teamMembersOnLeave = Array.from(membersOnLeaveMap.values())
+      // Filter out members who have no leaves (shouldn't happen, but safety check)
+      .filter((member: any) => member.leaves && member.leaves.length > 0);
 
     return NextResponse.json({ 
       teamMembersOnLeave,

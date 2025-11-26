@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { leaveType, startDate, endDate, reason } = await request.json();
+    const { leaveType, startDate, endDate, reason, halfDayType, shortDayTime, shortDayFromTime, shortDayToTime } = await request.json();
     const userId = (session.user as any).id;
 
     if (!leaveType || !startDate || !endDate || !reason) {
@@ -105,7 +105,38 @@ export async function POST(request: NextRequest) {
     // Calculate days
     const start = new Date(startDate);
     const end = new Date(endDate);
-    const days = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    
+    // Check if this is a half-day or short-day leave
+    const isHalfDay = halfDayType && (halfDayType === 'first-half' || halfDayType === 'second-half');
+    const isShortDay = (shortDayTime && shortDayTime.trim() !== '') || (shortDayFromTime && shortDayToTime);
+    
+    // For short-day, combine from and to times into a single string format "HH:MM-HH:MM"
+    let finalShortDayTime: string | undefined;
+    if (isShortDay) {
+      if (shortDayFromTime && shortDayToTime) {
+        finalShortDayTime = `${shortDayFromTime}-${shortDayToTime}`;
+      } else if (shortDayTime) {
+        finalShortDayTime = shortDayTime; // Backward compatibility
+      }
+    }
+    
+    // Calculate days based on leave type
+    let days: number;
+    if (isHalfDay) {
+      days = 0.5;
+    } else if (isShortDay) {
+      // Calculate days based on hours for short-day
+      if (shortDayFromTime && shortDayToTime) {
+        const fromTime = new Date(`2000-01-01T${shortDayFromTime}`);
+        const toTime = new Date(`2000-01-01T${shortDayToTime}`);
+        const hours = (toTime.getTime() - fromTime.getTime()) / (1000 * 60 * 60);
+        days = hours / 24; // Convert hours to days (e.g., 4 hours = 0.167 days)
+      } else {
+        days = 0.25; // Default fallback
+      }
+    } else {
+      days = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    }
 
     // For employees, verify that this leave type has been allotted to them and check balance
     if ((session.user as any).role === 'employee') {
@@ -160,6 +191,8 @@ export async function POST(request: NextRequest) {
       endDate: end,
       reason,
       status: 'pending', // Always pending - requires admin/HR approval
+      ...(isHalfDay && { halfDayType }), // Include halfDayType if it's a half-day leave
+      ...(isShortDay && finalShortDayTime && { shortDayTime: finalShortDayTime }), // Include shortDayTime if it's a short-day leave
     });
 
     await leave.save();
@@ -191,6 +224,8 @@ export async function POST(request: NextRequest) {
               days: leave.days || 0,
               startDate: format(new Date(leave.startDate), 'MMM dd, yyyy'),
               endDate: format(new Date(leave.endDate), 'MMM dd, yyyy'),
+              halfDayType: (leave as any).halfDayType, // Include half-day type if present
+              shortDayTime: (leave as any).shortDayTime, // Include short-day time if present
             });
           }
         }

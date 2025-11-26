@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useSession } from 'next-auth/react';
+import { useSession, signOut } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { CheckCircle, Loader2, Sparkles } from 'lucide-react';
+import { CheckCircle, Loader2, Sparkles, LogOut } from 'lucide-react';
 import Image from 'next/image';
 import Logo from '@/components/Logo';
 import LoadingDots from '@/components/LoadingDots';
@@ -14,6 +14,17 @@ export default function EmployeeWaitingPage() {
   const router = useRouter();
   const [checking, setChecking] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    try {
+      await signOut({ callbackUrl: '/login', redirect: true });
+    } catch (error) {
+      console.error('Logout error:', error);
+      setLoggingOut(false);
+    }
+  };
 
   useEffect(() => {
     setMounted(true);
@@ -126,6 +137,7 @@ export default function EmployeeWaitingPage() {
         transition={{ duration: 0.4 }}
         className="relative p-6 md:p-8 max-w-lg w-full "
       >
+
         {/* Logo at top */}
         <motion.div
           initial={{ opacity: 0, y: -10 }}
@@ -238,7 +250,24 @@ export default function EmployeeWaitingPage() {
             </p>
           )}
         </motion.div>
+        
       </motion.div>
+      {/* Logout Button - Top Right */}
+      <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.2 }}
+          className="absolute bottom-4 mx-auto"
+        >
+          <button
+            onClick={handleLogout}
+            disabled={loggingOut}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800 bg-white/80 hover:bg-white border border-gray-200 rounded-lg transition-colors font-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <LogOut className="w-4 h-4" />
+            {loggingOut ? 'Logging out...' : 'Logout'}
+          </button>
+        </motion.div>
     </div>
   );
 }

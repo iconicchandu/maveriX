@@ -15,6 +15,27 @@ const transporter = nodemailer.createTransport({
  * Reads FROM_NAME and FROM_EMAIL from environment variables
  * @returns Formatted email string like "Display Name <email@example.com>" or just "email@example.com"
  */
+// Helper function to convert 24-hour time to 12-hour format
+function formatTime12Hour(time24: string): string {
+  if (!time24) return '';
+  const [hours, minutes] = time24.split(':');
+  const hour = parseInt(hours, 10);
+  const min = minutes || '00';
+  const period = hour >= 12 ? 'PM' : 'AM';
+  const hour12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+  return `${hour12}:${min} ${period}`;
+}
+
+// Helper function to format time range from "HH:MM-HH:MM" to "h:mm AM - h:mm PM"
+function formatTimeRange(timeRange: string): string {
+  if (!timeRange) return '';
+  if (timeRange.includes('-')) {
+    const [from, to] = timeRange.split('-');
+    return `${formatTime12Hour(from)} - ${formatTime12Hour(to)}`;
+  }
+  return formatTime12Hour(timeRange);
+}
+
 function getFromEmail(): string {
   const fromEmail = process.env.FROM_EMAIL || '';
   const fromName = process.env.FROM_NAME;
@@ -171,16 +192,14 @@ interface LeaveRequestEmailData {
   days: number;
   startDate: string;
   endDate: string;
+  halfDayType?: 'first-half' | 'second-half';
+  shortDayTime?: string;
 }
 
 export async function sendLeaveRequestNotificationToHR(
   hrEmails: string[],
   data: LeaveRequestEmailData
 ) {
-  const profileImageUrl = data.profileImage
-    ? `${process.env.NEXT_PUBLIC_BASE_URL}${data.profileImage}`
-    : 'https://ui-avatars.com/api/?name=' + encodeURIComponent(data.employeeName) + '&size=100&background=667eea&color=fff';
-
   const mailOptions = {
     from: getFromEmail(),
     to: hrEmails.join(', '),
@@ -204,8 +223,7 @@ export async function sendLeaveRequestNotificationToHR(
               <div style="border-top: 1px solid #f0f0f0; margin-bottom: 30px;"></div>
               
               <div style="text-align: center; margin-bottom: 30px;">
-                <img src="${profileImageUrl}" alt="${data.employeeName}" style="width: 80px; height: 80px; border-radius: 50%; border: 3px solid #667eea; object-fit: cover;">
-                <h2 style="color: #202124; margin-top: 15px; font-size: 22px; font-weight: 600;">${data.employeeName}</h2>
+                <h2 style="color: #202124; margin-top: 0; font-size: 22px; font-weight: 600;">${data.employeeName}</h2>
                 <p style="color: #5f6368; font-size: 14px; margin: 5px 0;">${data.employeeEmail}</p>
               </div>
 
@@ -217,7 +235,13 @@ export async function sendLeaveRequestNotificationToHR(
                   </tr>
                   <tr>
                     <td style="padding: 8px 0; color: #5f6368; font-size: 14px; font-weight: 600;">Total Days:</td>
-                    <td style="padding: 8px 0; color: #202124; font-size: 14px; text-align: right; font-weight: 600;">${data.days} ${data.days === 1 ? 'day' : 'days'}</td>
+                    <td style="padding: 8px 0; color: #202124; font-size: 14px; text-align: right; font-weight: 600;">${
+                      data.days === 0.5 && data.halfDayType 
+                        ? (data.halfDayType === 'first-half' ? 'First Half' : 'Second Half')
+                        : data.days && data.days < 1 && data.days > 0 && data.shortDayTime
+                        ? `Short Day (${formatTimeRange(data.shortDayTime)}) - ${data.days.toFixed(2)} day`
+                        : `${data.days} ${data.days === 1 ? 'day' : 'days'}`
+                    }</td>
                   </tr>
                   <tr>
                     <td style="padding: 8px 0; color: #5f6368; font-size: 14px; font-weight: 600;">Start Date:</td>
@@ -280,6 +304,8 @@ interface LeaveStatusEmailData {
   status: 'approved' | 'rejected';
   rejectionReason?: string;
   approvedBy?: string;
+  halfDayType?: 'first-half' | 'second-half';
+  shortDayTime?: string;
 }
 
 export async function sendLeaveStatusNotificationToEmployee(
@@ -327,7 +353,11 @@ export async function sendLeaveStatusNotificationToEmployee(
                   </tr>
                   <tr>
                     <td style="padding: 8px 0; color: #5f6368; font-size: 14px; font-weight: 600;">Total Days:</td>
-                    <td style="padding: 8px 0; color: #202124; font-size: 14px; text-align: right; font-weight: 600;">${data.days} ${data.days === 1 ? 'day' : 'days'}</td>
+                    <td style="padding: 8px 0; color: #202124; font-size: 14px; text-align: right; font-weight: 600;">${
+                      data.days === 0.5 && data.halfDayType 
+                        ? (data.halfDayType === 'first-half' ? 'First Half' : 'Second Half')
+                        : `${data.days} ${data.days === 1 ? 'day' : 'days'}`
+                    }</td>
                   </tr>
                   <tr>
                     <td style="padding: 8px 0; color: #5f6368; font-size: 14px; font-weight: 600;">Start Date:</td>

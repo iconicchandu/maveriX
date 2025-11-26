@@ -10,12 +10,34 @@ import RejectLeaveModal from './RejectLeaveModal';
 import UserAvatar from './UserAvatar';
 import Pagination from './Pagination';
 
+// Helper function to convert 24-hour time to 12-hour format
+const formatTime12Hour = (time24: string): string => {
+  if (!time24) return '';
+  const [hours, minutes] = time24.split(':');
+  const hour = parseInt(hours, 10);
+  const min = minutes || '00';
+  const period = hour >= 12 ? 'PM' : 'AM';
+  const hour12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+  return `${hour12}:${min} ${period}`;
+};
+
+// Helper function to format time range from "HH:MM-HH:MM" to "h:mm AM - h:mm PM"
+const formatTimeRange = (timeRange: string): string => {
+  if (!timeRange) return '';
+  if (timeRange.includes('-')) {
+    const [from, to] = timeRange.split('-');
+    return `${formatTime12Hour(from)} - ${formatTime12Hour(to)}`;
+  }
+  return formatTime12Hour(timeRange);
+};
+
 interface Leave {
   _id: string;
   userId: {
     _id: string;
     name: string;
     email: string;
+    profileImage?: string;
   };
   leaveType: string | {
     _id: string;
@@ -27,6 +49,8 @@ interface Leave {
   endDate: string;
   reason: string;
   status: 'pending' | 'approved' | 'rejected';
+  halfDayType?: 'first-half' | 'second-half';
+  shortDayTime?: string;
   createdAt: string;
   allottedBy?: {
     _id: string;
@@ -551,6 +575,9 @@ export default function LeaveManagement({
                   Type
                 </th>
                 <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase font-primary">
+                  Days
+                </th>
+                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase font-primary">
                   Dates
                 </th>
                 <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase font-primary">
@@ -572,7 +599,7 @@ export default function LeaveManagement({
             <tbody className="bg-white divide-y divide-gray-200">
               {paginatedLeaves.length === 0 ? (
                 <tr>
-                  <td colSpan={canApprove ? 7 : 5} className="px-4 py-8 text-center text-gray-500 font-secondary">
+                  <td colSpan={canApprove ? 8 : 6} className="px-4 py-8 text-center text-gray-500 font-secondary">
                     {hasActiveFilters ? 'No leave requests match your filters' : 'No leave requests found'}
                   </td>
                 </tr>
@@ -589,7 +616,7 @@ export default function LeaveManagement({
                       <div className="flex items-center gap-3">
                         <UserAvatar
                           name={leave.userId?.name}
-                          image={(leave.userId as any)?.profileImage}
+                          image={leave.userId?.profileImage}
                           size="md"
                         />
                         <div>
@@ -605,6 +632,23 @@ export default function LeaveManagement({
                     <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-blue-100 text-blue-800 capitalize font-secondary">
                       {typeof leave.leaveType === 'object' ? leave.leaveType?.name : leave.leaveType}
                     </span>
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <div className="text-sm text-gray-900 font-secondary">
+                      {leave.days === 0.5 ? '0.5 day' : 
+                       leave.days && leave.days < 1 && leave.days > 0 ? `${leave.days.toFixed(2)} day` : 
+                       `${leave.days || 'N/A'} ${leave.days === 1 ? 'day' : 'days'}`}
+                      {leave.halfDayType && (
+                        <span className="ml-2 text-xs text-purple-600 font-medium">
+                          ({leave.halfDayType === 'first-half' ? 'First Half' : 'Second Half'})
+                        </span>
+                      )}
+                      {leave.shortDayTime && (
+                        <span className="ml-2 text-xs text-blue-600 font-medium">
+                          ({formatTimeRange(leave.shortDayTime)})
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <div className="text-sm text-gray-900 font-secondary">
@@ -716,7 +760,13 @@ export default function LeaveManagement({
                 {format(new Date(rejectModal.leave.endDate), 'MMM dd, yyyy')}
               </div>
               <div>
-                <span className="font-semibold">Days:</span> {rejectModal.leave.days || 'N/A'}
+                <span className="font-semibold">Days:</span>{' '}
+                {rejectModal.leave.days === 0.5 && rejectModal.leave.halfDayType
+                  ? rejectModal.leave.halfDayType === 'first-half' ? 'First Half' : 'Second Half'
+                  : rejectModal.leave.days && rejectModal.leave.days < 1 && rejectModal.leave.days > 0 && rejectModal.leave.shortDayTime
+                  ? `Short Day (${formatTimeRange(rejectModal.leave.shortDayTime)}) - ${rejectModal.leave.days.toFixed(2)} day`
+                  : `${rejectModal.leave.days || 'N/A'} ${rejectModal.leave.days === 1 ? 'day' : 'days'}`
+                }
               </div>
               {rejectModal.leave.reason && (
                 <div>
@@ -756,7 +806,13 @@ export default function LeaveManagement({
                 {format(new Date(deleteModal.leave.endDate), 'MMM dd, yyyy')}
               </div>
               <div>
-                <span className="font-semibold">Days:</span> {deleteModal.leave.days || 'N/A'}
+                <span className="font-semibold">Days:</span>{' '}
+                {deleteModal.leave.days === 0.5 && deleteModal.leave.halfDayType
+                  ? deleteModal.leave.halfDayType === 'first-half' ? 'First Half' : 'Second Half'
+                  : deleteModal.leave.days && deleteModal.leave.days < 1 && deleteModal.leave.days > 0 && deleteModal.leave.shortDayTime
+                  ? `Short Day (${formatTimeRange(deleteModal.leave.shortDayTime)}) - ${deleteModal.leave.days.toFixed(2)} day`
+                  : `${deleteModal.leave.days || 'N/A'} ${deleteModal.leave.days === 1 ? 'day' : 'days'}`
+                }
               </div>
               <div>
                 <span className="font-semibold">Reason:</span> {deleteModal.leave.reason}

@@ -15,7 +15,6 @@ import {
   LogOut,
   Menu,
   X,
-  Bell,
   User,
   UserCog,
   UserCircle,
@@ -233,27 +232,6 @@ export default function DashboardLayout({ children, role }: DashboardLayoutProps
 
       {/* Main content */}
       <div className="lg:pl-56">
-        {/* Top bar */}
-        <header className="bg-white shadow-sm sticky top-0 z-30 border-b border-gray-100">
-          <div className="flex items-center justify-between px-4 py-2.5">
-            {/* Logo for mobile, hamburger for desktop sidebar toggle */}
-            <div className="lg:hidden">
-              <Logo size="sm" />
-            </div>
-            <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="hidden lg:flex p-1.5 rounded-lg hover:bg-gray-100"
-            >
-              {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-            </button>
-            <div className="flex items-center gap-3 ml-auto">
-              <button className="p-1.5 rounded-lg hover:bg-gray-100 relative">
-                <Bell className="w-4 h-4 text-gray-600" />
-                <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 bg-secondary rounded-full"></span>
-              </button>
-            </div>
-          </div>
-        </header>
 
         {/* Mobile Bottom Navigation Bar - Glass Effect */}
         <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40">

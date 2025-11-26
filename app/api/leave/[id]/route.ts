@@ -165,6 +165,8 @@ export async function PUT(
           status: status as 'approved' | 'rejected',
           rejectionReason: status === 'rejected' ? updatedLeave.rejectionReason : undefined,
           approvedBy: approver ? (approver.name as string) : undefined,
+          halfDayType: (updatedLeave as any).halfDayType, // Include half-day type if present
+          shortDayTime: (updatedLeave as any).shortDayTime, // Include short-day time if present
         });
       }
     } catch (emailError) {

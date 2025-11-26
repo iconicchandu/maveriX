@@ -5,13 +5,15 @@ import '@/models/LeaveType';
 export interface ILeave extends Document {
   userId: mongoose.Types.ObjectId;
   leaveType: mongoose.Types.ObjectId; // Reference to LeaveType
-  days: number; // Number of days
+  days: number; // Number of days (0.5 for half-day, less than 1 for short-day)
   remainingDays?: number; // Remaining days for allotted leaves (deducted when approved)
   carryForward?: boolean; // Whether this leave is carried forward from previous year
   startDate: Date;
   endDate: Date;
   reason: string;
   status: 'pending' | 'approved' | 'rejected';
+  halfDayType?: 'first-half' | 'second-half'; // For half-day leaves
+  shortDayTime?: string; // For short-day leaves (time range in format "HH:MM-HH:MM" or "HH:MM" for backward compatibility)
   approvedBy?: mongoose.Types.ObjectId;
   approvedAt?: Date;
   rejectionReason?: string;
@@ -36,7 +38,14 @@ const LeaveSchema: Schema = new Schema(
     days: {
       type: Number,
       required: true,
-      min: 1,
+      min: 0.1, // Allow fractional days for half-day and short-day leaves
+    },
+    halfDayType: {
+      type: String,
+      enum: ['first-half', 'second-half'],
+    },
+    shortDayTime: {
+      type: String, // Store time in HH:MM format (e.g., "09:30", "14:00")
     },
     remainingDays: {
       type: Number,

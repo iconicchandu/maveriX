@@ -41,51 +41,51 @@ export const authOptions: NextAuthOptions = {
       },
       async authorize(credentials) {
         try {
-          if (!credentials?.email || !credentials?.password) {
-            throw new Error('Please enter your email and password');
-          }
+        if (!credentials?.email || !credentials?.password) {
+          throw new Error('Please enter your email and password');
+        }
 
-          await connectDB();
+        await connectDB();
 
-          const user = await User.findOne({ email: credentials.email.toLowerCase() });
+        const user = await User.findOne({ email: credentials.email.toLowerCase() });
 
-          if (!user) {
-            throw new Error('No user found with this email');
-          }
+        if (!user) {
+          throw new Error('No user found with this email');
+        }
 
-          if (!user.emailVerified) {
-            throw new Error('Please verify your email first');
-          }
+        if (!user.emailVerified) {
+          throw new Error('Please verify your email first');
+        }
 
-          if (!user.password) {
-            throw new Error('Please set your password first');
-          }
+        if (!user.password) {
+          throw new Error('Please set your password first');
+        }
 
-          const isPasswordValid = await bcrypt.compare(credentials.password, user.password);
+        const isPasswordValid = await bcrypt.compare(credentials.password, user.password);
 
-          if (!isPasswordValid) {
-            throw new Error('Invalid password');
-          }
+        if (!isPasswordValid) {
+          throw new Error('Invalid password');
+        }
 
-          // For employees, check if they are approved
-          if (user.role === 'employee' && !user.approved) {
-            // Allow login but they'll be redirected to waiting page
-          }
+        // For employees, check if they are approved
+        if (user.role === 'employee' && !user.approved) {
+          // Allow login but they'll be redirected to waiting page
+        }
 
-          const userDoc = user as IUser;
+        const userDoc = user as IUser;
           
           // Handle profileImage - validate and sanitize to prevent issues
           const profileImage = sanitizeProfileImage(userDoc.profileImage);
 
-          return {
-            id: String(userDoc._id),
-            email: userDoc.email,
-            name: userDoc.name,
-            role: userDoc.role,
+        return {
+          id: String(userDoc._id),
+          email: userDoc.email,
+          name: userDoc.name,
+          role: userDoc.role,
             profileImage: profileImage,
-            mobileNumber: userDoc.mobileNumber,
-            approved: userDoc.approved || false,
-          };
+          mobileNumber: userDoc.mobileNumber,
+          approved: userDoc.approved || false,
+        };
         } catch (error: any) {
           console.error('Authorization error:', error);
           // Re-throw the error so NextAuth can handle it properly
@@ -97,34 +97,34 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async jwt({ token, user }) {
       try {
-        if (user) {
-          token.id = user.id;
-          token.role = (user as any).role;
+      if (user) {
+        token.id = user.id;
+        token.role = (user as any).role;
           // Sanitize profileImage to prevent JWT token issues
           token.profileImage = sanitizeProfileImage((user as any).profileImage);
-          token.mobileNumber = (user as any).mobileNumber;
-          token.approved = (user as any).approved;
-        } else if (token.id) {
-          // Refresh user data from database
-          await connectDB();
+        token.mobileNumber = (user as any).mobileNumber;
+        token.approved = (user as any).approved;
+      } else if (token.id) {
+        // Refresh user data from database
+        await connectDB();
           const dbUser = await User.findById(token.id).select('profileImage mobileNumber name approved role emailVerified');
-          if (dbUser) {
-            const userDoc = dbUser as IUser;
+        if (dbUser) {
+          const userDoc = dbUser as IUser;
             // Sanitize profileImage to prevent JWT token issues
             token.profileImage = sanitizeProfileImage(userDoc.profileImage);
-            token.mobileNumber = userDoc.mobileNumber;
-            token.name = userDoc.name;
-            // Set approved status - be explicit about it
-            if (userDoc.role === 'employee') {
-              // For employees:
-              // - If approved is explicitly true → approved
-              // - If approved is undefined/null (old employees) → treat as approved
-              // - If approved is explicitly false → not approved (new employees)
-              token.approved = userDoc.approved === true || (userDoc.approved !== false && userDoc.approved !== true);
-            } else {
-              // Admin and HR are always approved
-              token.approved = true;
-            }
+          token.mobileNumber = userDoc.mobileNumber;
+          token.name = userDoc.name;
+          // Set approved status - be explicit about it
+          if (userDoc.role === 'employee') {
+            // For employees:
+            // - If approved is explicitly true → approved
+            // - If approved is undefined/null (old employees) → treat as approved
+            // - If approved is explicitly false → not approved (new employees)
+            token.approved = userDoc.approved === true || (userDoc.approved !== false && userDoc.approved !== true);
+          } else {
+            // Admin and HR are always approved
+            token.approved = true;
+          }
           }
         }
       } catch (error: any) {

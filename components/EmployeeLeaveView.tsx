@@ -29,6 +29,8 @@ interface Leave {
   remainingDays?: number;
   reason: string;
   status: 'pending' | 'approved' | 'rejected';
+  halfDayType?: 'first-half' | 'second-half';
+  shortDayTime?: string;
   allottedBy?: {
     _id: string;
     name: string;
@@ -43,6 +45,27 @@ interface EmployeeLeaveViewProps {
   onLeavesUpdated?: () => void;
 }
 
+// Helper function to convert 24-hour time to 12-hour format
+const formatTime12Hour = (time24: string): string => {
+  if (!time24) return '';
+  const [hours, minutes] = time24.split(':');
+  const hour = parseInt(hours, 10);
+  const min = minutes || '00';
+  const period = hour >= 12 ? 'PM' : 'AM';
+  const hour12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+  return `${hour12}:${min} ${period}`;
+};
+
+// Helper function to format time range from "HH:MM-HH:MM" to "h:mm AM - h:mm PM"
+const formatTimeRange = (timeRange: string): string => {
+  if (!timeRange) return '';
+  if (timeRange.includes('-')) {
+    const [from, to] = timeRange.split('-');
+    return `${formatTime12Hour(from)} - ${formatTime12Hour(to)}`;
+  }
+  return formatTime12Hour(timeRange);
+};
+
 export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: EmployeeLeaveViewProps) {
   const [leaves, setLeaves] = useState(initialLeaves);
   const [showRequestModal, setShowRequestModal] = useState(false);
@@ -53,6 +76,9 @@ export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: Em
     startDate: '',
     endDate: '',
     reason: '',
+    halfDayType: '' as '' | 'first-half' | 'second-half',
+    shortDayFromTime: '',
+    shortDayToTime: '',
   });
   const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; leave: Leave | null }>({
     isOpen: false,
@@ -119,11 +145,59 @@ export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: Em
     e.preventDefault();
     setLoading(true);
 
+    // Check if selected leave type is halfday or shortday
+    const selectedLeaveType = leaveTypes.find((type) => type._id === formData.leaveType);
+    const isHalfDay = selectedLeaveType?.name?.toLowerCase().includes('halfday') || 
+                     selectedLeaveType?.name?.toLowerCase().includes('half-day') || 
+                     selectedLeaveType?.name?.toLowerCase().includes('half day');
+    const isShortDay = selectedLeaveType?.name?.toLowerCase().includes('shortday') || 
+                      selectedLeaveType?.name?.toLowerCase().includes('short-day') || 
+                      selectedLeaveType?.name?.toLowerCase().includes('short day');
+    
+    // Validate half-day selection
+    if (isHalfDay && !formData.halfDayType) {
+      toast.error('Please select first half or second half for half-day leave');
+      setLoading(false);
+      return;
+    }
+
+    // Validate short-day selection
+    if (isShortDay && (!formData.shortDayFromTime || !formData.shortDayToTime)) {
+      toast.error('Please select from and to time for short-day leave');
+      setLoading(false);
+      return;
+    }
+
+    // Validate short-day time range
+    if (isShortDay && formData.shortDayFromTime && formData.shortDayToTime) {
+      const fromTime = new Date(`2000-01-01T${formData.shortDayFromTime}`);
+      const toTime = new Date(`2000-01-01T${formData.shortDayToTime}`);
+      if (toTime <= fromTime) {
+        toast.error('To time must be after From time');
+        setLoading(false);
+        return;
+      }
+    }
+
     // Check balance before submitting
     if (formData.leaveType && formData.startDate && formData.endDate) {
       const start = new Date(formData.startDate);
       const end = new Date(formData.endDate);
-      const requestedDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      // For half-day, use 0.5 days; for short-day, calculate based on time range; otherwise calculate normally
+      let requestedDays: number;
+      if (isHalfDay) {
+        requestedDays = 0.5;
+      } else if (isShortDay && formData.shortDayFromTime && formData.shortDayToTime) {
+        // Calculate days based on hours for short-day
+        const fromTime = new Date(`2000-01-01T${formData.shortDayFromTime}`);
+        const toTime = new Date(`2000-01-01T${formData.shortDayToTime}`);
+        const hours = (toTime.getTime() - fromTime.getTime()) / (1000 * 60 * 60);
+        requestedDays = hours / 24; // Convert hours to days
+      } else if (isShortDay) {
+        requestedDays = 0.25; // Fallback if times not provided
+      } else {
+        requestedDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      }
 
       // Find the allotted leave for this leave type
       const allottedLeavesList = leaves.filter((leave) => leave.allottedBy);
@@ -135,7 +209,10 @@ export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: Em
       if (allottedLeave) {
         const remainingDays = allottedLeave.remainingDays !== undefined ? allottedLeave.remainingDays : (allottedLeave.days || 0);
         if (remainingDays < requestedDays) {
-          toast.error(`Insufficient leave balance. You have ${remainingDays} days remaining, but requested ${requestedDays} days.`);
+          const requestedDaysDisplay = requestedDays === 0.5 ? '0.5' : 
+                                      requestedDays < 1 && requestedDays > 0 ? requestedDays.toFixed(2) : 
+                                      requestedDays.toString();
+          toast.error(`Insufficient leave balance. You have ${remainingDays} days remaining, but requested ${requestedDaysDisplay} ${requestedDays === 0.5 || (requestedDays < 1 && requestedDays > 0) ? 'day' : 'days'}.`);
           setLoading(false);
           return;
         }
@@ -159,7 +236,7 @@ export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: Em
 
       toast.success('Leave request submitted successfully');
       setShowRequestModal(false);
-      setFormData({ leaveType: '', startDate: '', endDate: '', reason: '' });
+      setFormData({ leaveType: '', startDate: '', endDate: '', reason: '', halfDayType: '', shortDayFromTime: '', shortDayToTime: '' });
       // Refresh leaves
       const leavesRes = await fetch('/api/leave');
       const leavesData = await leavesRes.json();
@@ -410,7 +487,19 @@ export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: Em
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <div className="text-sm text-gray-900 font-secondary">
-                          {leave.days || 'N/A'} {leave.days === 1 ? 'day' : 'days'}
+                          {leave.days === 0.5 ? '0.5 day' : 
+                           leave.days && leave.days < 1 && leave.days > 0 ? `${leave.days.toFixed(2)} day` : 
+                           `${leave.days || 'N/A'} ${leave.days === 1 ? 'day' : 'days'}`}
+                          {leave.halfDayType && (
+                            <span className="ml-2 text-xs text-purple-600 font-medium">
+                              ({leave.halfDayType === 'first-half' ? 'First Half' : 'Second Half'})
+                            </span>
+                          )}
+                          {leave.shortDayTime && (
+                            <span className="ml-2 text-xs text-blue-600 font-medium">
+                              ({formatTimeRange(leave.shortDayTime)})
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
@@ -471,19 +560,19 @@ export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: Em
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-white/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/20 p-5 w-full max-w-lg my-4"
+            className="bg-white/90 backdrop-blur-xl rounded-xl shadow-2xl border border-white/20 p-4 w-full max-w-md my-4"
           >
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-primary font-bold text-gray-800">Request Leave</h2>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-primary font-bold text-gray-800">Request Leave</h2>
               <button
                 onClick={() => setShowRequestModal(false)}
                 className="text-gray-400 hover:text-gray-600 transition-colors"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleRequestLeave} className="space-y-4">
+            <form onSubmit={handleRequestLeave} className="space-y-3">
               {/* Leave Type Selection - Compact Cards */}
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-2 font-secondary">
@@ -496,7 +585,7 @@ export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: Em
                     </p>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-3 gap-2">
                     {leaveTypes.map((type) => {
                       const isSelected = formData.leaveType === type._id;
                       return (
@@ -504,7 +593,7 @@ export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: Em
                           key={type._id}
                           type="button"
                           onClick={() => setFormData({ ...formData, leaveType: type._id })}
-                          className={`p-2.5 rounded-lg border transition-all text-center relative ${isSelected
+                          className={`p-2 rounded-lg border transition-all text-center relative ${isSelected
                             ? 'border-primary bg-primary/10 shadow-md'
                             : 'border-gray-200/50 bg-white/50 hover:border-gray-300 hover:bg-white/70'
                             }`}
@@ -512,12 +601,9 @@ export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: Em
                           whileTap={{ scale: 0.98 }}
                         >
                           <div className="flex items-center justify-center gap-1.5">
-                            <span className={`text-sm font-medium font-primary ${isSelected ? 'text-primary' : 'text-gray-700'}`}>
+                            <span className={`text-[12px] font-medium font-primary ${isSelected ? 'text-primary' : 'text-gray-700'}`}>
                               {type.name}
                             </span>
-                            {isSelected && (
-                              <CheckCircle className="w-4 h-4 text-primary" />
-                            )}
                           </div>
                         </motion.button>
                       );
@@ -525,6 +611,160 @@ export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: Em
                   </div>
                 )}
               </div>
+
+              {/* Half-Day Selection - Only shown when halfday leave type is selected */}
+              {formData.leaveType && (() => {
+                const selectedLeaveType = leaveTypes.find((type) => type._id === formData.leaveType);
+                const isHalfDay = selectedLeaveType?.name?.toLowerCase().includes('halfday') || 
+                                 selectedLeaveType?.name?.toLowerCase().includes('half-day') || 
+                                 selectedLeaveType?.name?.toLowerCase().includes('half day');
+                
+                if (isHalfDay) {
+                  return (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      className="bg-gradient-to-r from-purple-50/80 to-pink-50/80 backdrop-blur-sm rounded-lg p-3 border border-purple-200/50"
+                    >
+                      <label className="block text-xs font-medium text-gray-700 mb-2 font-secondary">
+                        Select Half Day
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <motion.button
+                          type="button"
+                          onClick={() => setFormData({ ...formData, halfDayType: 'first-half' })}
+                          className={`p-2.5 rounded-lg border transition-all text-center ${
+                            formData.halfDayType === 'first-half'
+                              ? 'border-purple-500 bg-purple-100 shadow-md'
+                              : 'border-gray-200/50 bg-white/50 hover:border-gray-300 hover:bg-white/70'
+                          }`}
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                        >
+                          <div className="flex flex-col items-center gap-1">
+                            <span className={`text-sm font-medium font-primary ${
+                              formData.halfDayType === 'first-half' ? 'text-purple-700' : 'text-gray-700'
+                            }`}>
+                              First Half
+                            </span>
+                            <span className="text-[10px] text-gray-500 font-secondary">Morning</span>
+                          </div>
+                        </motion.button>
+                        <motion.button
+                          type="button"
+                          onClick={() => setFormData({ ...formData, halfDayType: 'second-half' })}
+                          className={`p-2.5 rounded-lg border transition-all text-center ${
+                            formData.halfDayType === 'second-half'
+                              ? 'border-purple-500 bg-purple-100 shadow-md'
+                              : 'border-gray-200/50 bg-white/50 hover:border-gray-300 hover:bg-white/70'
+                          }`}
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                        >
+                          <div className="flex flex-col items-center gap-1">
+                            <span className={`text-sm font-medium font-primary ${
+                              formData.halfDayType === 'second-half' ? 'text-purple-700' : 'text-gray-700'
+                            }`}>
+                              Second Half
+                            </span>
+                            <span className="text-[10px] text-gray-500 font-secondary">Afternoon</span>
+                          </div>
+                        </motion.button>
+                      </div>
+                    </motion.div>
+                  );
+                }
+                return null;
+              })()}
+
+              {/* Short-Day Time Selection - Only shown when shortday leave type is selected */}
+              {formData.leaveType && (() => {
+                const selectedLeaveType = leaveTypes.find((type) => type._id === formData.leaveType);
+                const isShortDay = selectedLeaveType?.name?.toLowerCase().includes('shortday') || 
+                                  selectedLeaveType?.name?.toLowerCase().includes('short-day') || 
+                                  selectedLeaveType?.name?.toLowerCase().includes('short day');
+                
+                if (isShortDay) {
+                  // Calculate total hours
+                  let totalHours = 0;
+                  let totalHoursDisplay = '';
+                  if (formData.shortDayFromTime && formData.shortDayToTime) {
+                    const fromTime = new Date(`2000-01-01T${formData.shortDayFromTime}`);
+                    const toTime = new Date(`2000-01-01T${formData.shortDayToTime}`);
+                    if (toTime > fromTime) {
+                      totalHours = (toTime.getTime() - fromTime.getTime()) / (1000 * 60 * 60);
+                      const hours = Math.floor(totalHours);
+                      const minutes = Math.round((totalHours - hours) * 60);
+                      if (hours > 0 && minutes > 0) {
+                        totalHoursDisplay = `${hours}h ${minutes}m`;
+                      } else if (hours > 0) {
+                        totalHoursDisplay = `${hours}h`;
+                      } else {
+                        totalHoursDisplay = `${minutes}m`;
+                      }
+                    }
+                  }
+
+                  return (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      className="bg-gradient-to-r from-blue-50/80 to-cyan-50/80 backdrop-blur-sm rounded-lg p-3 border border-blue-200/50"
+                    >
+                      <label className="block text-xs font-medium text-gray-700 mb-2 font-secondary">
+                        Select Time Range
+                      </label>
+                      <div className="grid grid-cols-2 gap-2 mb-2">
+                        <div>
+                          <label className="block text-[10px] font-medium text-gray-600 mb-1 font-secondary">
+                            From
+                          </label>
+                          <input
+                            type="time"
+                            value={formData.shortDayFromTime}
+                            onChange={(e) => setFormData({ ...formData, shortDayFromTime: e.target.value })}
+                            required
+                            className="w-full px-2 py-1.5 text-xs text-gray-700 border border-gray-300/50 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none font-secondary bg-white/80 backdrop-blur-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-medium text-gray-600 mb-1 font-secondary">
+                            To
+                          </label>
+                          <input
+                            type="time"
+                            value={formData.shortDayToTime}
+                            onChange={(e) => setFormData({ ...formData, shortDayToTime: e.target.value })}
+                            required
+                            min={formData.shortDayFromTime || undefined}
+                            className="w-full px-2 py-1.5 text-xs text-gray-700 border border-gray-300/50 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none font-secondary bg-white/80 backdrop-blur-sm"
+                          />
+                        </div>
+                      </div>
+                      {totalHoursDisplay && formData.shortDayFromTime && formData.shortDayToTime && (
+                        <div className="mt-2 p-2 bg-blue-100/80 rounded-lg border border-blue-200/50">
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-medium text-gray-700 font-secondary">Time Range:</span>
+                              <span className="text-xs font-bold text-blue-700 font-primary">
+                                {formatTime12Hour(formData.shortDayFromTime)} - {formatTime12Hour(formData.shortDayToTime)}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-medium text-gray-700 font-secondary">Total Hours:</span>
+                              <span className="text-xs font-bold text-blue-700 font-primary">{totalHoursDisplay}</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      <p className="text-[10px] text-gray-500 mt-1 font-secondary">
+                        Select the time range for your short-day leave
+                      </p>
+                    </motion.div>
+                  );
+                }
+                return null;
+              })()}
 
               {/* Selected Leave Type Balance Details - Only shown when selected */}
               {formData.leaveType && (() => {
@@ -568,41 +808,85 @@ export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: Em
               })()}
 
               {/* Date Selection */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1 font-secondary">
-                    Start Date
-                  </label>
-                  <input
-                    type="date"
-                    value={formData.startDate}
-                    onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-                    required
-                    min={new Date().toISOString().split('T')[0]}
-                    className="w-full px-2.5 py-2 text-sm text-gray-700 border border-gray-300/50 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-secondary bg-white/80 backdrop-blur-sm"
-                  />
-                </div>
+              {(() => {
+                const selectedLeaveType = leaveTypes.find((type) => type._id === formData.leaveType);
+                const isHalfDay = selectedLeaveType?.name?.toLowerCase().includes('halfday') || 
+                                 selectedLeaveType?.name?.toLowerCase().includes('half-day') || 
+                                 selectedLeaveType?.name?.toLowerCase().includes('half day');
+                const isShortDay = selectedLeaveType?.name?.toLowerCase().includes('shortday') || 
+                                  selectedLeaveType?.name?.toLowerCase().includes('short-day') || 
+                                  selectedLeaveType?.name?.toLowerCase().includes('short day');
+                const isSingleDay = isHalfDay || isShortDay; // Both half-day and short-day use same date
+                
+                return (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1 font-secondary">
+                        Start Date
+                      </label>
+                      <input
+                        type="date"
+                        value={formData.startDate}
+                        onChange={(e) => {
+                          const newStartDate = e.target.value;
+                          // For half-day and short-day, automatically set end date to same as start date
+                          setFormData({ 
+                            ...formData, 
+                            startDate: newStartDate,
+                            ...(isSingleDay && { endDate: newStartDate })
+                          });
+                        }}
+                        required
+                        min={new Date().toISOString().split('T')[0]}
+                        className="w-full px-2 py-1.5 text-xs text-gray-700 border border-gray-300/50 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-secondary bg-white/80 backdrop-blur-sm"
+                      />
+                    </div>
 
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1 font-secondary">
-                    End Date
-                  </label>
-                  <input
-                    type="date"
-                    value={formData.endDate}
-                    onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
-                    required
-                    min={formData.startDate || new Date().toISOString().split('T')[0]}
-                    className="w-full px-2.5 py-2 text-sm text-gray-700 border border-gray-300/50 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-secondary bg-white/80 backdrop-blur-sm"
-                  />
-                </div>
-              </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1 font-secondary">
+                        End Date
+                      </label>
+                      <input
+                        type="date"
+                        value={formData.endDate}
+                        onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
+                        required
+                        min={formData.startDate || new Date().toISOString().split('T')[0]}
+                        max={isSingleDay ? formData.startDate : undefined}
+                        disabled={isSingleDay}
+                        className="w-full px-2 py-1.5 text-xs text-gray-700 border border-gray-300/50 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-secondary bg-white/80 backdrop-blur-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
+                      />
+                      {isSingleDay && formData.startDate && (
+                        <p className="text-[9px] text-gray-500 mt-0.5 font-secondary">
+                          Same as start date
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Requested Days Display */}
               {formData.startDate && formData.endDate && (() => {
+                const selectedLeaveType = leaveTypes.find((type) => type._id === formData.leaveType);
+                const isHalfDay = selectedLeaveType?.name?.toLowerCase().includes('halfday') || 
+                                 selectedLeaveType?.name?.toLowerCase().includes('half-day') || 
+                                 selectedLeaveType?.name?.toLowerCase().includes('half day');
+                const isShortDay = selectedLeaveType?.name?.toLowerCase().includes('shortday') || 
+                                  selectedLeaveType?.name?.toLowerCase().includes('short-day') || 
+                                  selectedLeaveType?.name?.toLowerCase().includes('short day');
+                
                 const start = new Date(formData.startDate);
                 const end = new Date(formData.endDate);
-                const requestedDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+                // For half-day, use 0.5 days; for short-day, use 0.25 days; otherwise calculate normally
+                let requestedDays: number;
+                if (isHalfDay) {
+                  requestedDays = 0.5;
+                } else if (isShortDay) {
+                  requestedDays = 0.25;
+                } else {
+                  requestedDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+                }
                 const selectedAllottedLeave = leaves.find((leave) => {
                   const leaveTypeId = typeof leave.leaveType === 'object' ? leave.leaveType?._id : leave.leaveType;
                   return leave.allottedBy && leaveTypeId === formData.leaveType;
@@ -626,7 +910,9 @@ export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: Em
                         <div className="text-xs font-medium text-gray-700 font-secondary">Requested Days</div>
                         <div className={`text-xl font-bold mt-0.5 font-primary ${isInsufficient ? 'text-red-600' : 'text-green-600'
                           }`}>
-                          {requestedDays} {requestedDays === 1 ? 'day' : 'days'}
+                          {requestedDays === 0.5 ? '0.5 day' : 
+                           requestedDays < 1 && requestedDays > 0 ? `${requestedDays.toFixed(2)} day` : 
+                           `${requestedDays} ${requestedDays === 1 ? 'day' : 'days'}`}
                         </div>
                       </div>
                       {isInsufficient && (
@@ -677,7 +963,9 @@ export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: Em
                     </p>
                   ) : (
                     <div className="space-y-2">
-                      {teamMembersOnLeave.map((member) => (
+                      {teamMembersOnLeave
+                        .filter((member: any) => member.leaves && member.leaves.length > 0) // Additional safety check
+                        .map((member) => (
                         <div
                           key={member._id}
                           className="flex items-center gap-2 p-2 bg-white/60 rounded-lg border border-orange-200/30"
@@ -692,18 +980,27 @@ export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: Em
                               {member.name}
                             </div>
                             <div className="flex flex-wrap gap-1.5 mt-1">
-                              {member.leaves.map((leave: any, idx: number) => (
-                                <span
-                                  key={idx}
-                                  className={`px-1.5 py-0.5 text-[10px] font-medium rounded-full font-secondary ${
-                                    leave.status === 'approved'
-                                      ? 'bg-green-100 text-green-700'
-                                      : 'bg-yellow-100 text-yellow-700'
-                                  }`}
-                                >
-                                  {leave.leaveType} ({format(new Date(leave.startDate), 'MMM dd')} - {format(new Date(leave.endDate), 'MMM dd')})
-                                </span>
-                              ))}
+                              {member.leaves.map((leave: any, idx: number) => {
+                                // Check if this is a half-day leave
+                                const isHalfDay = leave.days === 0.5 || leave.halfDayType;
+                                const halfDayLabel = leave.halfDayType === 'first-half' ? 'First Half' : 
+                                                    leave.halfDayType === 'second-half' ? 'Second Half' : '';
+                                
+                                return (
+                                  <span
+                                    key={idx}
+                                    className={`px-1.5 py-0.5 text-[10px] font-medium rounded-full font-secondary ${
+                                      leave.status === 'approved'
+                                        ? 'bg-green-100 text-green-700'
+                                        : 'bg-yellow-100 text-yellow-700'
+                                    }`}
+                                  >
+                                    {leave.leaveType}
+                                    {isHalfDay && halfDayLabel && ` (${halfDayLabel})`}
+                                    {' '}({format(new Date(leave.startDate), 'MMM dd')} - {format(new Date(leave.endDate), 'MMM dd')})
+                                  </span>
+                                );
+                              })}
                             </div>
                           </div>
                         </div>
@@ -722,19 +1019,19 @@ export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: Em
                   value={formData.reason}
                   onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
                   required
-                  rows={3}
-                  placeholder="Please provide a reason for your leave request..."
-                  className="w-full px-2.5 py-2 text-sm text-gray-700 border border-gray-300/50 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-secondary bg-white/80 backdrop-blur-sm resize-none"
+                  rows={2}
+                  placeholder="Reason for leave..."
+                  className="w-full px-2 py-1.5 text-xs text-gray-700 border border-gray-300/50 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-secondary bg-white/80 backdrop-blur-sm resize-none"
                 />
               </div>
 
               {/* Action Buttons */}
-              <div className="flex gap-2 pt-3 border-t border-gray-200/50">
+              <div className="flex gap-2 pt-2 border-t border-gray-200/50">
                 <button
                   type="button"
                   onClick={() => {
                     setShowRequestModal(false);
-                    setFormData({ leaveType: '', startDate: '', endDate: '', reason: '' });
+                    setFormData({ leaveType: '', startDate: '', endDate: '', reason: '', halfDayType: '', shortDayFromTime: '', shortDayToTime: '' });
                   }}
                   className="flex-1 px-3 py-2 text-sm border border-gray-300/50 rounded-lg text-gray-700 hover:bg-gray-50/80 backdrop-blur-sm transition-colors font-secondary"
                 >
@@ -782,7 +1079,11 @@ export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: Em
                 {format(new Date(deleteModal.leave.endDate), 'MMM dd, yyyy')}
               </div>
               <div>
-                <span className="font-semibold">Days:</span> {deleteModal.leave.days || 'N/A'}
+                <span className="font-semibold">Days:</span>{' '}
+                {deleteModal.leave.days === 0.5 ? '0.5 day' : 
+                 deleteModal.leave.days && deleteModal.leave.days < 1 && deleteModal.leave.days > 0 
+                 ? `${deleteModal.leave.days.toFixed(2)} day${deleteModal.leave.shortDayTime ? ` (${formatTimeRange(deleteModal.leave.shortDayTime)})` : ''}` 
+                 : `${deleteModal.leave.days || 'N/A'} ${deleteModal.leave.days === 1 ? 'day' : 'days'}`}
               </div>
               <div>
                 <span className="font-semibold">Status:</span> {deleteModal.leave.status}

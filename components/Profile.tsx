@@ -115,10 +115,10 @@ export default function Profile() {
       }
 
       // Show preview of compressed image
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setPreviewImage(reader.result as string);
-      };
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setPreviewImage(reader.result as string);
+    };
       reader.readAsDataURL(compressedFile);
 
       // Upload compressed file

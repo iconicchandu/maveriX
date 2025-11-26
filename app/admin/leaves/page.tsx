@@ -21,9 +21,9 @@ export default async function AdminLeavesPage() {
   const _ = LeaveType; // Reference to ensure LeaveType is loaded
   
   const leaves = await Leave.find()
-    .populate('userId', 'name email')
+    .populate('userId', 'name email profileImage')
     .populate('leaveType', 'name description')
-    .populate('allottedBy', 'name email')
+    .populate('allottedBy', 'name email profileImage')
     .sort({ createdAt: -1 })
     .lean();
 
