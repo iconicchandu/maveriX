@@ -1,7 +1,7 @@
 // Service Worker for MM HRM PWA
 // Version: 1.0.0 - Auto-incremented on build
 
-const CACHE_NAME = 'mm-hrm-v1.0.1'; // Updated to fix iOS redirect issue
+const CACHE_NAME = 'mm-hrm-v1.0.2'; // Updated to fix iOS redirect issue
 const RUNTIME_CACHE = 'mm-hrm-runtime-v1.0.0';
 const OFFLINE_PAGE = '/offline.html';
 
