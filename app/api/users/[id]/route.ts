@@ -32,8 +32,16 @@ export async function PUT(
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
+    // Prevent HR from changing user roles
+    if (userRole === 'hr' && role && role !== user.role) {
+      return NextResponse.json({ error: 'HR cannot change user roles' }, { status: 403 });
+    }
+
     if (name) user.name = name;
-    if (role) user.role = role;
+    // Only allow role change if user is admin
+    if (role && userRole === 'admin') {
+      user.role = role;
+    }
     if (designation !== undefined) {
       user.designation = designation && designation.trim() !== '' ? designation.trim() : undefined;
     }

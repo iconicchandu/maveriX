@@ -29,6 +29,11 @@ export default function RootLayout({
     <html lang="en" className={openSans.variable}>
       <head>
         <link
+          rel="icon"
+          href="/assets/maverixicon.png"
+          type="image/png"
+        />
+        <link
           href="https://fonts.cdnfonts.com/css/gotham"
           rel="stylesheet"
         />

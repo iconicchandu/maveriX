@@ -366,13 +366,13 @@ export default function Feed() {
             className="inline-flex items-center gap-1.5 hover:underline cursor-pointer font-semibold align-middle"
             style={{ display: 'inline-flex', verticalAlign: 'middle' }}
           >
-            <UserAvatar
+            {/* <UserAvatar
               name={mentionedUser.name}
               image={mentionedUser.profileImage}
               size="xs"
               className="flex-shrink-0 inline-block"
-            />
-            <span className="bg-gradient-to-r from-blue-600 via-blue-500 to-red-600 bg-clip-text text-transparent font-bold inline-block">
+            /> */}
+            <span className="mb-1 text-primary inline-block">
               {firstName}
             </span>
           </span>
@@ -547,11 +547,13 @@ export default function Feed() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.05 }}
-                className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-md border border-gray-100 p-6 hover:shadow-xl hover:border-gray-200 transition-all duration-300 relative z-0"
+                className="bg-white/90 backdrop-blur-sm rounded-xl shadow-md border border-gray-100 p-3 hover:shadow-xl hover:border-gray-200 transition-all duration-300 relative z-0"
               >
-                <div className="flex items-start justify-between mb-4">
+                {/* Header Section */}
+                <div className="flex items-start justify-between mb-4 pb-2 border-b border-gray-200">
                   <div className="flex items-start gap-3 flex-1">
-                    <div className="relative">
+                    {/* Profile Image */}
+                    <div className="relative flex-shrink-0">
                       <UserAvatar
                         name={post.userId.name}
                         image={post.userId.profileImage}
@@ -559,13 +561,15 @@ export default function Feed() {
                         className="ring-2 ring-gray-100"
                       />
                     </div>
+                    
+                    {/* User Info */}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <h3 className="font-primary font-bold text-gray-900 text-base">
+                      <div className="flex items-center gap-2 mb-0 flex-wrap">
+                        <h3 className="font-sm font-bold text-gray-900 text-sm">
                           {post.userId.name}
                         </h3>
                         {post.userId.designation && (
-                          <span className={`text-xs px-2.5 py-1 rounded-full font-secondary font-medium ${post.userId.role === 'admin'
+                          <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-secondary font-medium ${post.userId.role === 'admin'
                               ? 'bg-gradient-to-r from-red-500 to-orange-500 text-white shadow-md'
                               : 'bg-gradient-to-r from-primary/10 to-purple-600/10 text-primary'
                             }`}>
@@ -573,15 +577,15 @@ export default function Feed() {
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-2">
-                        <p className="text-xs text-gray-500 font-secondary">
-                          {formatDistanceToNow(new Date(post.createdAt), {
-                            addSuffix: true,
-                          })}
-                        </p>
-                      </div>
+                      <p className="text-[10px] text-gray-500 font-secondary">
+                        {formatDistanceToNow(new Date(post.createdAt), {
+                          addSuffix: true,
+                        })}
+                      </p>
                     </div>
                   </div>
+                  
+                  {/* Delete Button */}
                   {canDelete(post) && (
                     <button
                       onClick={() => handleDelete(post)}
@@ -593,13 +597,12 @@ export default function Feed() {
                   )}
                 </div>
 
-                <div className="pl-14 mb-4">
-                  <div className="text-sm text-gray-800 font-secondary whitespace-pre-wrap break-words leading-relaxed">
+                {/* Post Content */}
+                <div className="mt-4">
+                  <div className="text-[12px] text-gray-800 font-secondary whitespace-pre-wrap break-words leading-relaxed">
                     {parseContent(post.content, post.mentions || [])}
                   </div>
                 </div>
-
-               
               </motion.div>
             ))}
           </div>

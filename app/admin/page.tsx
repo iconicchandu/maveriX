@@ -12,6 +12,7 @@ import LoadingDots from '@/components/LoadingDots';
 import RecentActivity from '@/components/RecentActivity';
 import AnnouncementManagement from '@/components/AnnouncementManagement';
 import PendingEmployees from '@/components/PendingEmployees';
+import NotClockedInModal from '@/components/NotClockedInModal';
 
 interface RecentTeam {
   _id: string;
@@ -45,17 +46,18 @@ export default function AdminDashboard() {
     totalEmployees: 0,
     pendingLeaves: 0,
     pendingPayments: 0,
-    todayAttendance: 0,
+    clockedInToday: 0,
   });
   const [loading, setLoading] = useState(true);
   const [recentTeams, setRecentTeams] = useState<RecentTeam[]>([]);
   const [teamsLoading, setTeamsLoading] = useState(true);
   const [profileImage, setProfileImage] = useState<string | null>(null);
+  const [showNotClockedInModal, setShowNotClockedInModal] = useState(false);
 
   // Verify admin role
   useEffect(() => {
     if (status === 'loading') return;
-    
+
     if (status === 'unauthenticated') {
       router.push('/login');
       return;
@@ -103,7 +105,7 @@ export default function AdminDashboard() {
       fetchStats();
       fetchRecentTeams();
       fetchProfileImage();
-      
+
       // Auto-refresh teams every 5 seconds
       const interval = setInterval(() => {
         fetchRecentTeams();
@@ -122,7 +124,7 @@ export default function AdminDashboard() {
         totalEmployees: data.totalEmployees || 0,
         pendingLeaves: data.pendingLeaves || 0,
         pendingPayments: data.pendingPayments || 0,
-        todayAttendance: data.todayAttendance || 0,
+        clockedInToday: data.clockedInToday || 0,
       });
     } catch (err) {
       console.error('Error fetching stats:', err);
@@ -152,24 +154,28 @@ export default function AdminDashboard() {
       value: stats.totalEmployees,
       icon: Users,
       gradient: 'from-blue-500 to-blue-600',
+      onClick: undefined as (() => void) | undefined,
+    },
+    {
+      title: 'Clocked In Today',
+      value: stats.clockedInToday,
+      icon: Clock,
+      gradient: 'from-purple-500 to-purple-600',
+      onClick: () => setShowNotClockedInModal(true),
     },
     {
       title: 'Pending Leaves',
       value: stats.pendingLeaves,
       icon: Calendar,
       gradient: 'from-yellow-500 to-yellow-600',
+      onClick: undefined as (() => void) | undefined,
     },
     {
       title: 'Pending Payments',
       value: stats.pendingPayments,
       icon: DollarSign,
       gradient: 'from-green-500 to-green-600',
-    },
-    {
-      title: 'Today Attendance',
-      value: stats.todayAttendance,
-      icon: Clock,
-      gradient: 'from-purple-500 to-purple-600',
+      onClick: undefined as (() => void) | undefined,
     },
   ];
 
@@ -217,7 +223,10 @@ export default function AdminDashboard() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.1 }}
-                  className="bg-white/80 backdrop-blur-sm rounded-xl shadow-lg p-5 border border-white/50 hover:shadow-xl transition-shadow"
+                  onClick={stat.onClick}
+                  className={`bg-white/80 backdrop-blur-sm rounded-xl shadow-lg p-5 border border-white/50 hover:shadow-xl transition-shadow ${
+                    stat.onClick ? 'cursor-pointer' : ''
+                  }`}
                 >
                   <div className="flex items-center justify-between">
                     <div>
@@ -346,6 +355,12 @@ export default function AdminDashboard() {
           </div>
         </div>
       </div>
+
+      {/* Not Clocked In Modal */}
+      <NotClockedInModal
+        isOpen={showNotClockedInModal}
+        onClose={() => setShowNotClockedInModal(false)}
+      />
     </DashboardLayout>
   );
 }

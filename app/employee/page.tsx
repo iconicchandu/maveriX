@@ -14,6 +14,8 @@ import { motion } from 'framer-motion';
 import { useToast } from '@/contexts/ToastContext';
 import UserAvatar from '@/components/UserAvatar';
 import LoadingDots from '@/components/LoadingDots';
+import Logo from '@/components/Logo';
+import LeaveNotificationAlert from '@/components/LeaveNotificationAlert';
 
 export default function EmployeeDashboard() {
   const { data: session } = useSession();
@@ -32,6 +34,32 @@ export default function EmployeeDashboard() {
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [currentAnnouncementIndex, setCurrentAnnouncementIndex] = useState(0);
   const [showAnnouncement, setShowAnnouncement] = useState(false);
+  const [greeting, setGreeting] = useState('🌟 Welcome');
+
+  // Function to get time-based greeting
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour >= 5 && hour < 12) {
+      return '🌞 Good Morning';
+    } else if (hour >= 12 && hour < 17) {
+      return '🌇 Good Afternoon';
+    } else if (hour >= 17 && hour < 22) {
+      return '🌆 Good Evening';
+    } else {
+      return '🌙 Good Night';
+    }
+  };
+
+  // Update greeting on mount and when time changes
+  useEffect(() => {
+    setGreeting(getGreeting());
+    // Update greeting every minute to handle day transitions
+    const interval = setInterval(() => {
+      setGreeting(getGreeting());
+    }, 60000); // Check every minute
+
+    return () => clearInterval(interval);
+  }, []);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -90,9 +118,15 @@ export default function EmployeeDashboard() {
           const birthDay = dob.getDate();
           
           // Check if today matches the birthday (month and day)
-          // Show celebration every time the dashboard is opened/reloaded on birthday
           if (today.getMonth() === birthMonth && today.getDate() === birthDay) {
-            setShowBirthdayCelebration(true);
+            // Check if birthday popup has already been shown today
+            const todayKey = `birthday-celebration-${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
+            const hasShownToday = localStorage.getItem(todayKey);
+            
+            // Only show if not shown today (first time opening website today)
+            if (!hasShownToday) {
+              setShowBirthdayCelebration(true);
+            }
           }
         }
       }
@@ -161,13 +195,21 @@ export default function EmployeeDashboard() {
   }, [session, fetchStats, fetchProfileImage]);
 
   return (
-    <DashboardLayout role="employee">
+    <>
+      <LeaveNotificationAlert />
+      <DashboardLayout role="employee">
       {/* Birthday Celebration Modal */}
       {showBirthdayCelebration && userProfile && (
         <BirthdayCelebration
           userName={userProfile.name || session?.user?.name || 'Employee'}
           userImage={userProfile.profileImage || (session?.user as any)?.profileImage}
-          onClose={() => setShowBirthdayCelebration(false)}
+          onClose={() => {
+            // Mark as shown in localStorage for today
+            const today = new Date();
+            const todayKey = `birthday-celebration-${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
+            localStorage.setItem(todayKey, 'true');
+            setShowBirthdayCelebration(false);
+          }}
         />
       )}
 
@@ -182,6 +224,11 @@ export default function EmployeeDashboard() {
       
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
         <div className="space-y-6 p-4 md:p-6">
+          {/* Logo - Mobile Only */}
+          <div className="flex justify-center md:hidden mb-2">
+            <Logo size="md" />
+          </div>
+
           {/* Header */}
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 dashboard-header-image p-3 rounded-lg">
             <div>
@@ -192,7 +239,7 @@ export default function EmployeeDashboard() {
                   size="lg"
                 />
                 <div>
-                  <h3 className="text-2xl font-primary font-bold text-gray-800">Welcome {session?.user?.name}</h3>
+                  <h3 className="text-md font-bold text-gray-800">{greeting}, <span className="text-secondary">{session?.user?.name}</span></h3>
                   {userProfile?.designation ? (
                     <p className="text-sm font-bold text-primary mt-1 font-secondary">
                       {userProfile.designation}
@@ -321,5 +368,6 @@ export default function EmployeeDashboard() {
         </div>
       </div>
     </DashboardLayout>
+    </>
   );
 }

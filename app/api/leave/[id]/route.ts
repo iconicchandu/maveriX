@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import connectDB from '@/lib/mongodb';
 import Leave from '@/models/Leave';
+import Notification from '@/models/Notification';
 import mongoose from 'mongoose';
 import { sendLeaveStatusNotificationToEmployee } from '@/utils/sendEmail';
 import { format } from 'date-fns';
@@ -172,6 +173,45 @@ export async function PUT(
     } catch (emailError) {
       // Log email error but don't fail the request
       console.error('Error sending leave status notification email:', emailError);
+    }
+
+    // Create notification for the employee
+    try {
+      const user = typeof updatedLeave.userId === 'object' && updatedLeave.userId && 'email' in updatedLeave.userId ? updatedLeave.userId as any : null;
+      const leaveType = typeof updatedLeave.leaveType === 'object' && updatedLeave.leaveType && 'name' in updatedLeave.leaveType ? updatedLeave.leaveType as any : null;
+      const approver = typeof updatedLeave.approvedBy === 'object' && updatedLeave.approvedBy && 'name' in updatedLeave.approvedBy ? updatedLeave.approvedBy as any : null;
+
+      if (user && 'email' in user && user.email && updatedLeave.userId) {
+        const notificationType = status === 'approved' ? 'leave_approved' : 'leave_rejected';
+        const title = status === 'approved' 
+          ? 'Leave Request Approved' 
+          : 'Leave Request Rejected';
+        
+        const leaveTypeName = leaveType ? (leaveType.name as string) : 'Leave';
+        const daysText = updatedLeave.days === 0.5 
+          ? '0.5 day' 
+          : updatedLeave.days < 1 
+          ? `${updatedLeave.days.toFixed(2)} day` 
+          : `${updatedLeave.days} ${updatedLeave.days === 1 ? 'day' : 'days'}`;
+        
+        const message = status === 'approved'
+          ? `Your ${leaveTypeName} request for ${daysText} from ${format(new Date(updatedLeave.startDate), 'MMM dd, yyyy')} to ${format(new Date(updatedLeave.endDate), 'MMM dd, yyyy')} has been approved${approver ? ` by ${approver.name}` : ''}.`
+          : `Your ${leaveTypeName} request for ${daysText} from ${format(new Date(updatedLeave.startDate), 'MMM dd, yyyy')} to ${format(new Date(updatedLeave.endDate), 'MMM dd, yyyy')} has been rejected${approver ? ` by ${approver.name}` : ''}.${updatedLeave.rejectionReason ? ` Reason: ${updatedLeave.rejectionReason}` : ''}`;
+
+        const notification = new Notification({
+          userId: updatedLeave.userId,
+          type: notificationType,
+          title,
+          message,
+          leaveId: updatedLeave._id,
+          dismissed: false,
+        });
+
+        await notification.save();
+      }
+    } catch (notificationError) {
+      // Log notification error but don't fail the request
+      console.error('Error creating notification:', notificationError);
     }
 
     return NextResponse.json({

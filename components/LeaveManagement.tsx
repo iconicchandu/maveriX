@@ -2,13 +2,14 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Check, X, Calendar, Clock, Search, Filter, XCircle, Trash2 } from 'lucide-react';
+import { Plus, Check, X, Calendar, Clock, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useToast } from '@/contexts/ToastContext';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
 import RejectLeaveModal from './RejectLeaveModal';
 import UserAvatar from './UserAvatar';
 import Pagination from './Pagination';
+import AdvancedFilterBar from './AdvancedFilterBar';
 
 // Helper function to convert 24-hour time to 12-hour format
 const formatTime12Hour = (time24: string): string => {
@@ -104,7 +105,6 @@ export default function LeaveManagement({
   const [filterLeaveType, setFilterLeaveType] = useState<string>('all');
   const [filterDateFrom, setFilterDateFrom] = useState<string>('');
   const [filterDateTo, setFilterDateTo] = useState<string>('');
-  const [showFilters, setShowFilters] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
   const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; leave: Leave | null }>({
@@ -117,6 +117,10 @@ export default function LeaveManagement({
   });
   const [rejecting, setRejecting] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [reasonModal, setReasonModal] = useState<{ isOpen: boolean; reason: string }>({
+    isOpen: false,
+    reason: '',
+  });
 
   // Update leaves when initialLeaves changes
   useEffect(() => {
@@ -171,9 +175,9 @@ export default function LeaveManagement({
         body: JSON.stringify({ status: 'approved' }),
       });
 
-      let data;
+      let data: { error?: string; leave?: Leave };
       try {
-        data = await res.json();
+        data = await res.json() as { error?: string; leave?: Leave };
       } catch (parseError) {
         // Revert on error
         setLeaves(previousLeaves);
@@ -192,7 +196,7 @@ export default function LeaveManagement({
       if (data.leave) {
         setLeaves(
           leaves.map((leave) =>
-            leave._id === id ? { ...leave, ...data.leave, status: 'approved' as const } : leave
+            leave._id === id ? { ...leave, ...data.leave!, status: 'approved' as const } : leave
           )
         );
       }
@@ -203,6 +207,11 @@ export default function LeaveManagement({
       setTimeout(() => {
         window.dispatchEvent(new CustomEvent('leaveStatusChanged'));
       }, 100);
+      
+      // Refresh the list if callback is provided
+      if (onLeaveAdded) {
+        onLeaveAdded();
+      }
     } catch (err: any) {
       // Revert on error
       setLeaves(previousLeaves);
@@ -236,9 +245,9 @@ export default function LeaveManagement({
         body: JSON.stringify({ status: 'rejected', rejectionReason: reason }),
       });
 
-      let data;
+      let data: { error?: string; leave?: Leave };
       try {
-        data = await res.json();
+        data = await res.json() as { error?: string; leave?: Leave };
       } catch (parseError) {
         // Revert on error
         setLeaves(previousLeaves);
@@ -261,7 +270,7 @@ export default function LeaveManagement({
       if (data.leave) {
         setLeaves(
           leaves.map((leave) =>
-            leave._id === id ? { ...leave, ...data.leave, status: 'rejected' as const } : leave
+            leave._id === id ? { ...leave, ...data.leave!, status: 'rejected' as const } : leave
           )
         );
       }
@@ -335,7 +344,7 @@ export default function LeaveManagement({
 
   // Filter and search logic
   const filteredLeaves = useMemo(() => {
-    return leaves.filter((leave) => {
+    const filtered = leaves.filter((leave) => {
       // Search filter - search in employee name, email, reason
       if (searchTerm) {
         const searchLower = searchTerm.toLowerCase();
@@ -364,20 +373,59 @@ export default function LeaveManagement({
         }
       }
 
-      // Date range filter
-      if (filterDateFrom) {
-        const fromDate = new Date(filterDateFrom);
-        const leaveStartDate = new Date(leave.startDate);
-        if (leaveStartDate < fromDate) return false;
-      }
-      if (filterDateTo) {
-        const toDate = new Date(filterDateTo);
-        toDate.setHours(23, 59, 59, 999); // Include the entire end date
-        const leaveEndDate = new Date(leave.endDate);
-        if (leaveEndDate > toDate) return false;
+      // Date range filter - filter by "Requested On" date (createdAt)
+      if (filterDateFrom || filterDateTo) {
+        if (!leave.createdAt) return false;
+        
+        const requestedDate = new Date(leave.createdAt);
+        requestedDate.setHours(0, 0, 0, 0);
+        
+        // If only from date is set, treat it as a single date filter
+        if (filterDateFrom && !filterDateTo) {
+          const filterDate = new Date(filterDateFrom);
+          filterDate.setHours(0, 0, 0, 0);
+          const filterDateEnd = new Date(filterDateFrom);
+          filterDateEnd.setHours(23, 59, 59, 999);
+          
+          // Check if requested date falls within the filter date
+          if (requestedDate < filterDate || requestedDate > filterDateEnd) {
+            return false;
+          }
+        }
+        // If only to date is set, treat it as a single date filter
+        else if (!filterDateFrom && filterDateTo) {
+          const filterDate = new Date(filterDateTo);
+          filterDate.setHours(0, 0, 0, 0);
+          const filterDateEnd = new Date(filterDateTo);
+          filterDateEnd.setHours(23, 59, 59, 999);
+          
+          // Check if requested date falls within the filter date
+          if (requestedDate < filterDate || requestedDate > filterDateEnd) {
+            return false;
+          }
+        }
+        // If both dates are set, check if requested date is within the range
+        else if (filterDateFrom && filterDateTo) {
+          const fromDate = new Date(filterDateFrom);
+          fromDate.setHours(0, 0, 0, 0);
+          const toDate = new Date(filterDateTo);
+          toDate.setHours(23, 59, 59, 999);
+          
+          // Check if requested date falls within the filter date range
+          if (requestedDate < fromDate || requestedDate > toDate) {
+            return false;
+          }
+        }
       }
 
       return true;
+    });
+
+    // Sort by start date (newest first) to group dates together
+    return filtered.sort((a, b) => {
+      const dateA = new Date(a.startDate).getTime();
+      const dateB = new Date(b.startDate).getTime();
+      return dateB - dateA;
     });
   }, [leaves, searchTerm, filterStatus, filterEmployee, filterLeaveType, filterDateFrom, filterDateTo]);
 
@@ -404,7 +452,14 @@ export default function LeaveManagement({
     setFilterDateTo('');
   };
 
-  const hasActiveFilters = filterStatus !== 'all' || filterEmployee !== 'all' || filterLeaveType !== 'all' || filterDateFrom || filterDateTo || searchTerm;
+  const hasActiveFilters = !!(
+    filterStatus !== 'all' ||
+    filterEmployee !== 'all' ||
+    filterLeaveType !== 'all' ||
+    filterDateFrom ||
+    filterDateTo ||
+    searchTerm
+  );
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -419,147 +474,82 @@ export default function LeaveManagement({
 
   return (
     <div className="space-y-4">
-      {/* Search and Filter Bar */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
-        <div className="flex flex-col md:flex-row gap-3">
-          {/* Search Input */}
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <input
-              type="text"
-              placeholder="Search by employee name, email, or reason..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-secondary bg-white"
-            />
-          </div>
-
-          {/* Filter Toggle Button */}
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className={`flex items-center gap-2 px-4 py-2 text-sm rounded-lg transition-colors font-secondary ${
-              showFilters || hasActiveFilters
-                ? 'bg-primary text-white hover:bg-primary-dark'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            <Filter className="w-4 h-4" />
-            Filters
-            {hasActiveFilters && (
-              <span className="bg-white text-primary rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
-                {[
-                  filterStatus !== 'all',
-                  filterEmployee !== 'all',
-                  filterLeaveType !== 'all',
-                  filterDateFrom,
-                  filterDateTo,
-                ].filter(Boolean).length}
-              </span>
-            )}
-          </button>
-
-          {/* Clear Filters Button */}
-          {hasActiveFilters && (
-            <button
-              onClick={clearFilters}
-              className="flex items-center gap-2 px-4 py-2 text-sm text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-100 transition-colors font-secondary"
-            >
-              <XCircle className="w-4 h-4" />
-              Clear
-            </button>
-          )}
-        </div>
-
-        {/* Filter Panel */}
-        {showFilters && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="mt-4 pt-4 border-t border-gray-200 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3"
-          >
-            {/* Status Filter */}
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1.5 font-secondary">Status</label>
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value as any)}
-                className="w-full px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-secondary bg-white"
-              >
-                <option value="all">All Status</option>
-                <option value="pending">Pending</option>
-                <option value="approved">Approved</option>
-                <option value="rejected">Rejected</option>
-              </select>
-            </div>
-
-            {/* Employee Filter */}
-            {canApprove && employees.length > 0 && (
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1.5 font-secondary">Employee</label>
-                <select
-                  value={filterEmployee}
-                  onChange={(e) => setFilterEmployee(e.target.value)}
-                  className="w-full px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-secondary bg-white"
-                >
-                  <option value="all">All Employees</option>
-                  {employees.map((emp) => (
-                    <option key={emp._id} value={emp._id}>
-                      {emp.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {/* Leave Type Filter */}
-            {leaveTypes.length > 0 && (
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1.5 font-secondary">Leave Type</label>
-                <select
-                  value={filterLeaveType}
-                  onChange={(e) => setFilterLeaveType(e.target.value)}
-                  className="w-full px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-secondary bg-white"
-                >
-                  <option value="all">All Types</option>
-                  {leaveTypes.map((type) => (
-                    <option key={type._id} value={type._id}>
-                      {type.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {/* Date From Filter */}
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1.5 font-secondary">From Date</label>
-              <input
-                type="date"
-                value={filterDateFrom}
-                onChange={(e) => setFilterDateFrom(e.target.value)}
-                className="w-full px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-secondary bg-white"
-              />
-            </div>
-
-            {/* Date To Filter */}
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1.5 font-secondary">To Date</label>
-              <input
-                type="date"
-                value={filterDateTo}
-                onChange={(e) => setFilterDateTo(e.target.value)}
-                className="w-full px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-secondary bg-white"
-              />
-            </div>
-          </motion.div>
-        )}
-      </div>
-
-      {/* Results Count */}
-      <div className="text-sm text-gray-600 font-secondary">
-        Showing {filteredLeaves.length} of {leaves.length} leave requests
-      </div>
+      {/* Advanced Filter Bar */}
+      <AdvancedFilterBar
+        searchPlaceholder="Search by employee name, email, or reason..."
+        searchValue={searchTerm}
+        onSearchChange={setSearchTerm}
+        hasActiveFilters={hasActiveFilters}
+        onClearAll={clearFilters}
+        resultsCount={filteredLeaves.length}
+        totalCount={leaves.length}
+        filters={[
+          {
+            label: 'Status',
+            key: 'status',
+            type: 'select' as const,
+            value: filterStatus,
+            onChange: (value: string) => setFilterStatus(value as 'all' | 'pending' | 'approved' | 'rejected'),
+            options: [
+              { value: 'all', label: 'All Status' },
+              { value: 'pending', label: 'Pending' },
+              { value: 'approved', label: 'Approved' },
+              { value: 'rejected', label: 'Rejected' },
+            ],
+          },
+          ...(canApprove && employees.length > 0
+            ? [
+                {
+                  label: 'Employee',
+                  key: 'employee',
+                  type: 'select' as const,
+                  value: filterEmployee,
+                  onChange: setFilterEmployee,
+                  options: [
+                    { value: 'all', label: 'All Employees' },
+                    ...employees.map((emp) => ({ value: emp._id, label: emp.name })),
+                  ],
+                },
+              ]
+            : []),
+          ...(leaveTypes.length > 0
+            ? [
+                {
+                  label: 'Leave Type',
+                  key: 'leaveType',
+                  type: 'select' as const,
+                  value: filterLeaveType,
+                  onChange: setFilterLeaveType,
+                  options: [
+                    { value: 'all', label: 'All Types' },
+                    ...leaveTypes.map((type) => ({ value: type._id, label: type.name })),
+                  ],
+                },
+              ]
+            : []),
+          {
+            label: 'Date Range',
+            key: 'date',
+            type: 'dateRange' as const,
+            value: '',
+            onChange: () => {},
+          },
+          {
+            label: 'From Date',
+            key: 'dateFrom',
+            type: 'date' as const,
+            value: filterDateFrom,
+            onChange: setFilterDateFrom,
+          },
+          {
+            label: 'To Date',
+            key: 'dateTo',
+            type: 'date' as const,
+            value: filterDateTo,
+            onChange: setFilterDateTo,
+          },
+        ]}
+      />
 
       <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
         <div className="overflow-x-auto">
@@ -604,13 +594,33 @@ export default function LeaveManagement({
                   </td>
                 </tr>
               ) : (
-                paginatedLeaves.map((leave) => (
-                <motion.tr
-                  key={leave._id}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="hover:bg-gray-50"
-                >
+                paginatedLeaves.map((leave, index) => {
+                  // Check if this is the first row or if the date has changed
+                  const prevLeave = index > 0 ? paginatedLeaves[index - 1] : null;
+                  const currentDate = new Date(leave.startDate).toDateString();
+                  const prevDate = prevLeave ? new Date(prevLeave.startDate).toDateString() : null;
+                  const shouldShowSeparator = prevDate && currentDate !== prevDate;
+
+                  return (
+                    <>
+                      {shouldShowSeparator && (
+                        <tr key={`separator-${leave._id}`}>
+                          <td
+                            colSpan={canApprove ? 8 : 6}
+                            className="px-4 py-2 bg-gray-50 border-t-2 border-gray-300"
+                          >
+                            <div className="text-sm font-semibold text-gray-700 font-secondary">
+                              {format(new Date(leave.startDate), 'MMM dd, yyyy')}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      <motion.tr
+                        key={leave._id}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="hover:bg-gray-50"
+                      >
                   {canApprove && (
                     <td className="px-4 py-3 whitespace-nowrap">
                       <div className="flex items-center gap-3">
@@ -657,7 +667,12 @@ export default function LeaveManagement({
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="text-sm text-gray-900 max-w-xs truncate font-secondary">{leave.reason}</div>
+                    <button
+                      onClick={() => setReasonModal({ isOpen: true, reason: leave.reason || 'No reason provided' })}
+                      className="text-sm text-primary hover:text-primary-dark underline font-secondary cursor-pointer"
+                    >
+                      Click to view
+                    </button>
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <span
@@ -713,8 +728,10 @@ export default function LeaveManagement({
                       </div>
                     </td>
                   )}
-                </motion.tr>
-                ))
+                      </motion.tr>
+                    </>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -825,6 +842,41 @@ export default function LeaveManagement({
         }
         loading={deleting}
       />
+
+      {/* Reason View Modal */}
+      {reasonModal.isOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-2xl"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-primary font-bold text-gray-800">Leave Reason</h2>
+              <button
+                onClick={() => setReasonModal({ isOpen: false, reason: '' })}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+              <p className="text-sm text-gray-700 font-secondary whitespace-pre-wrap break-words">
+                {reasonModal.reason}
+              </p>
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={() => setReasonModal({ isOpen: false, reason: '' })}
+                className="px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors font-secondary"
+              >
+                Close
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 }

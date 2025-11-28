@@ -23,9 +23,10 @@ interface Employee {
 
 interface EmployeeManagementProps {
   initialEmployees: Employee[];
+  canChangeRole?: boolean;
 }
 
-export default function EmployeeManagement({ initialEmployees }: EmployeeManagementProps) {
+export default function EmployeeManagement({ initialEmployees, canChangeRole = true }: EmployeeManagementProps) {
   const [employees, setEmployees] = useState(initialEmployees);
   const [showModal, setShowModal] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
@@ -82,10 +83,15 @@ export default function EmployeeManagement({ initialEmployees }: EmployeeManagem
         : '/api/users';
       const method = editingEmployee ? 'PUT' : 'POST';
 
+      // Don't send role if HR cannot change roles
+      const requestBody = canChangeRole 
+        ? formData 
+        : { ...formData, role: editingEmployee ? editingEmployee.role : 'employee' };
+
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(requestBody),
       });
 
       const data = await res.json();
@@ -106,6 +112,8 @@ export default function EmployeeManagement({ initialEmployees }: EmployeeManagem
         toast.success('Employee added successfully');
       }
 
+      // Refresh employee list to ensure consistency
+      fetchEmployees();
       handleCloseModal();
       setLoading(false);
     } catch (err: any) {
@@ -140,6 +148,9 @@ export default function EmployeeManagement({ initialEmployees }: EmployeeManagem
         setDeleteModal({ isOpen: false, employee: null });
         return;
       }
+      
+      // Refresh employee list to ensure consistency
+      fetchEmployees();
       setDeleting(false);
       setDeleteModal({ isOpen: false, employee: null });
     } catch (err) {
@@ -148,6 +159,26 @@ export default function EmployeeManagement({ initialEmployees }: EmployeeManagem
       toast.error('An error occurred');
       setDeleting(false);
       setDeleteModal({ isOpen: false, employee: null });
+    }
+  };
+
+  // Fetch fresh employee data from server
+  const fetchEmployees = async () => {
+    try {
+      const res = await fetch('/api/users', {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache',
+        },
+      });
+      const data = await res.json();
+      if (res.ok && data.users) {
+        // Filter out admin users if needed (same as initial filter)
+        const filteredUsers = data.users.filter((u: Employee) => u.role !== 'admin');
+        setEmployees(filteredUsers);
+      }
+    } catch (err) {
+      console.error('Error fetching employees:', err);
     }
   };
 
@@ -391,21 +422,31 @@ export default function EmployeeManagement({ initialEmployees }: EmployeeManagem
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1.5 font-secondary">Role</label>
-                <select
-                  value={formData.role}
-                  onChange={(e) =>
-                    setFormData({ ...formData, role: e.target.value as any })
-                  }
-                  required
-                  className="w-full px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-secondary bg-white"
-                >
-                  <option value="employee">Employee</option>
-                  <option value="hr">HR</option>
-                  <option value="admin">Admin</option>
-                </select>
-              </div>
+              {canChangeRole ? (
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1.5 font-secondary">Role</label>
+                  <select
+                    value={formData.role}
+                    onChange={(e) =>
+                      setFormData({ ...formData, role: e.target.value as any })
+                    }
+                    required
+                    className="w-full px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-secondary bg-white"
+                  >
+                    <option value="employee">Employee</option>
+                    <option value="hr">HR</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1.5 font-secondary">Role</label>
+                  <div className="w-full px-3 py-2 text-sm text-gray-500 border border-gray-300 rounded-lg bg-gray-100 font-secondary capitalize">
+                    {formData.role}
+                  </div>
+                  <p className="mt-1 text-xs text-gray-500 font-secondary">Role cannot be changed</p>
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1.5 font-secondary">Designation</label>

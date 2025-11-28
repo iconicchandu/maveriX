@@ -49,11 +49,19 @@ export async function POST(request: NextRequest) {
 
     const { email, name, role, designation } = await request.json();
 
-    if (!email || !name || !role) {
+    if (!email || !name) {
       return NextResponse.json(
-        { error: 'Email, name, and role are required' },
+        { error: 'Email and name are required' },
         { status: 400 }
       );
+    }
+
+    // Prevent HR from setting roles - default to 'employee'
+    const finalRole = userRole === 'hr' ? 'employee' : (role || 'employee');
+    
+    // Prevent HR from creating admin or hr users
+    if (userRole === 'hr' && (finalRole === 'admin' || finalRole === 'hr')) {
+      return NextResponse.json({ error: 'HR cannot create admin or HR users' }, { status: 403 });
     }
 
     await connectDB();
@@ -69,7 +77,7 @@ export async function POST(request: NextRequest) {
 
     // Explicitly set approved status based on role
     let approvedStatus = false;
-    if (role === 'admin' || role === 'hr') {
+    if (finalRole === 'admin' || finalRole === 'hr') {
       approvedStatus = true; // Auto-approve admin and HR
     } else {
       approvedStatus = false; // Employees need admin approval
@@ -78,7 +86,7 @@ export async function POST(request: NextRequest) {
     const user = new User({
       email: email.toLowerCase(),
       name,
-      role,
+      role: finalRole,
       designation: designation || undefined,
       verificationToken,
       verificationTokenExpiry,

@@ -11,6 +11,7 @@ interface MentionUser {
   profileImage?: string;
   mobileNumber?: string;
   role: string;
+  designation?: string;
 }
 
 interface MentionPopupProps {
@@ -73,7 +74,7 @@ export default function MentionPopup({
                 {user.name}
               </h4>
               <span className="text-xs px-3 py-1 bg-primary/10 text-primary rounded-full font-secondary">
-                {user.role}
+                {user.designation}
               </span>
             </div>
 

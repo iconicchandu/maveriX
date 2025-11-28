@@ -23,6 +23,7 @@ import {
 import Logo from './Logo';
 import UserAvatar from './UserAvatar';
 import LoadingDots from './LoadingDots';
+import LeaveNotificationAlert from './LeaveNotificationAlert';
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -161,17 +162,19 @@ export default function DashboardLayout({ children, role }: DashboardLayoutProps
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Mobile sidebar backdrop */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
+    <>
+      {role === 'employee' && <LeaveNotificationAlert />}
+      <div className="min-h-screen bg-gray-50">
+        {/* Mobile sidebar backdrop */}
+        {sidebarOpen && (
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
 
-      {/* Sidebar */}
-      <aside
+        {/* Sidebar */}
+        <aside
         className={`fixed top-0 left-0 h-full w-56 bg-white shadow-lg z-50 transform transition-transform duration-300 ease-in-out lg:translate-x-0 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
@@ -228,10 +231,10 @@ export default function DashboardLayout({ children, role }: DashboardLayoutProps
             </button>
           </div>
         </div>
-      </aside>
+        </aside>
 
-      {/* Main content */}
-      <div className="lg:pl-56">
+        {/* Main content */}
+        <div className="lg:pl-56">
 
         {/* Mobile Bottom Navigation Bar - Glass Effect */}
         <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40">
@@ -305,7 +308,8 @@ export default function DashboardLayout({ children, role }: DashboardLayoutProps
         {/* Page content */}
         <main className="bg-[#eef3ff] p-3 pb-16 lg:pb-4">{children}</main>
       </div>
-    </div>
+      </div>
+    </>
   );
 }
 

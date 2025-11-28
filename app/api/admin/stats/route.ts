@@ -23,7 +23,13 @@ export async function GET() {
 
     await connectDB();
 
-    const [totalEmployees, pendingLeaves, pendingPayments, todayAttendance] = await Promise.all([
+    // Get today's date range
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const [totalEmployees, pendingLeaves, pendingPayments, clockedInToday] = await Promise.all([
       // Count only employees who have verified email and set password
       User.countDocuments({ 
         role: { $ne: 'admin' },
@@ -32,14 +38,17 @@ export async function GET() {
       }),
       Leave.countDocuments({ status: 'pending' }),
       Finance.countDocuments({ status: 'pending' }),
-      Attendance.countDocuments({ date: new Date() }),
+      // Count distinct employees who have clocked in today
+      Attendance.distinct('userId', {
+        clockIn: { $gte: today, $lt: tomorrow }
+      }).then(users => users.length),
     ]);
 
     return NextResponse.json({
       totalEmployees,
       pendingLeaves,
       pendingPayments,
-      todayAttendance,
+      clockedInToday,
     });
   } catch (error) {
     console.error('Error fetching admin stats:', error);

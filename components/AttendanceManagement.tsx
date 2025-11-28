@@ -2,10 +2,11 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { format } from 'date-fns';
-import { Clock, Search, Filter, X } from 'lucide-react';
+import { Clock } from 'lucide-react';
 import { motion } from 'framer-motion';
 import UserAvatar from './UserAvatar';
 import Pagination from './Pagination';
+import AdvancedFilterBar from './AdvancedFilterBar';
 
 interface Attendance {
   _id: string;
@@ -33,7 +34,6 @@ export default function AttendanceManagement({ initialAttendance }: AttendanceMa
   const [filterDateFrom, setFilterDateFrom] = useState('');
   const [filterDateTo, setFilterDateTo] = useState('');
   const [filterClockOut, setFilterClockOut] = useState('all');
-  const [showFilters, setShowFilters] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
@@ -61,7 +61,7 @@ export default function AttendanceManagement({ initialAttendance }: AttendanceMa
   const filteredAttendance = useMemo(() => {
     if (!initialAttendance || initialAttendance.length === 0) return [];
 
-    return initialAttendance.filter((attendance) => {
+    const filtered = initialAttendance.filter((attendance) => {
       // Search filter - search in employee name, email
       if (searchTerm) {
         const searchLower = searchTerm.toLowerCase();
@@ -107,6 +107,13 @@ export default function AttendanceManagement({ initialAttendance }: AttendanceMa
 
       return true;
     });
+
+    // Sort by date (newest first) to group dates together
+    return filtered.sort((a, b) => {
+      const dateA = new Date(a.date).getTime();
+      const dateB = new Date(b.date).getTime();
+      return dateB - dateA;
+    });
   }, [initialAttendance, searchTerm, filterEmployee, filterStatus, filterDateFrom, filterDateTo, filterClockOut]);
 
   // Pagination logic
@@ -132,13 +139,14 @@ export default function AttendanceManagement({ initialAttendance }: AttendanceMa
     setFilterClockOut('all');
   };
 
-  const hasActiveFilters =
+  const hasActiveFilters = !!(
     filterEmployee !== 'all' ||
     filterStatus !== 'all' ||
     filterDateFrom ||
     filterDateTo ||
     filterClockOut !== 'all' ||
-    searchTerm;
+    searchTerm
+  );
 
   if (!initialAttendance || initialAttendance.length === 0) {
     return (
@@ -153,136 +161,80 @@ export default function AttendanceManagement({ initialAttendance }: AttendanceMa
 
   return (
     <div className="space-y-4">
-      {/* Search and Filter Bar */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
-        <div className="flex flex-col md:flex-row gap-3">
-          {/* Search Input */}
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <input
-              type="text"
-              placeholder="Search by employee name or email..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-secondary bg-white"
-            />
-          </div>
-
-          {/* Filter Toggle Button */}
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className={`flex items-center gap-2 px-4 py-2 text-sm rounded-lg transition-colors font-secondary ${
-              showFilters || hasActiveFilters
-                ? 'bg-primary text-white hover:bg-primary-dark'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            <Filter className="w-4 h-4" />
-            Filters
-            {hasActiveFilters && (
-              <span className="bg-white text-primary rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
-                !
-              </span>
-            )}
-          </button>
-        </div>
-
-        {/* Filter Panel */}
-        {showFilters && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="mt-4 pt-4 border-t border-gray-200"
-          >
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
-              {/* Employee Filter */}
-              {showEmployeeColumn && (
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1.5 font-secondary">Employee</label>
-                  <select
-                    value={filterEmployee}
-                    onChange={(e) => setFilterEmployee(e.target.value)}
-                    className="w-full px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-secondary bg-white"
-                  >
-                    <option value="all">All Employees</option>
-                    {employees.map((emp) => (
-                      <option key={emp._id} value={emp._id}>
-                        {emp.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* Status Filter */}
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1.5 font-secondary">Status</label>
-                <select
-                  value={filterStatus}
-                  onChange={(e) => setFilterStatus(e.target.value)}
-                  className="w-full px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-secondary bg-white"
-                >
-                  <option value="all">All Status</option>
-                  <option value="present">Present</option>
-                  <option value="absent">Absent</option>
-                  <option value="half-day">Half Day</option>
-                  <option value="leave">Leave</option>
-                </select>
-              </div>
-
-              {/* Clock Out Filter */}
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1.5 font-secondary">Clock Out</label>
-                <select
-                  value={filterClockOut}
-                  onChange={(e) => setFilterClockOut(e.target.value)}
-                  className="w-full px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-secondary bg-white"
-                >
-                  <option value="all">All</option>
-                  <option value="yes">Clocked Out</option>
-                  <option value="no">Not Clocked Out</option>
-                </select>
-              </div>
-
-              {/* Date From Filter */}
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1.5 font-secondary">Date From</label>
-                <input
-                  type="date"
-                  value={filterDateFrom}
-                  onChange={(e) => setFilterDateFrom(e.target.value)}
-                  className="w-full px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-secondary bg-white"
-                />
-              </div>
-
-              {/* Date To Filter */}
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1.5 font-secondary">Date To</label>
-                <input
-                  type="date"
-                  value={filterDateTo}
-                  onChange={(e) => setFilterDateTo(e.target.value)}
-                  className="w-full px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-secondary bg-white"
-                />
-              </div>
-            </div>
-
-            {/* Clear Filters Button */}
-            {hasActiveFilters && (
-              <div className="mt-3 flex justify-end">
-                <button
-                  onClick={clearFilters}
-                  className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 font-secondary"
-                >
-                  <X className="w-4 h-4" />
-                  Clear Filters
-                </button>
-              </div>
-            )}
-          </motion.div>
-        )}
-      </div>
+      {/* Advanced Filter Bar */}
+      <AdvancedFilterBar
+        searchPlaceholder="Search by employee name or email..."
+        searchValue={searchTerm}
+        onSearchChange={setSearchTerm}
+        hasActiveFilters={hasActiveFilters}
+        onClearAll={clearFilters}
+        resultsCount={filteredAttendance.length}
+        totalCount={initialAttendance.length}
+        filters={[
+          ...(showEmployeeColumn
+            ? [
+                {
+                  label: 'Employee',
+                  key: 'employee',
+                  type: 'select' as const,
+                  value: filterEmployee,
+                  onChange: setFilterEmployee,
+                  options: [
+                    { value: 'all', label: 'All Employees' },
+                    ...employees.map((emp) => ({ value: emp._id, label: emp.name })),
+                  ],
+                },
+              ]
+            : []),
+          {
+            label: 'Status',
+            key: 'status',
+            type: 'select' as const,
+            value: filterStatus,
+            onChange: setFilterStatus,
+            options: [
+              { value: 'all', label: 'All Status' },
+              { value: 'present', label: 'Present' },
+              { value: 'absent', label: 'Absent' },
+              { value: 'half-day', label: 'Half Day' },
+              { value: 'leave', label: 'Leave' },
+            ],
+          },
+          {
+            label: 'Clock Out',
+            key: 'clockOut',
+            type: 'select' as const,
+            value: filterClockOut,
+            onChange: setFilterClockOut,
+            options: [
+              { value: 'all', label: 'All' },
+              { value: 'yes', label: 'Clocked Out' },
+              { value: 'no', label: 'Not Clocked Out' },
+            ],
+          },
+          {
+            label: 'Date Range',
+            key: 'date',
+            type: 'dateRange' as const,
+            value: '',
+            onChange: () => {},
+          },
+          {
+            label: 'From Date',
+            key: 'dateFrom',
+            type: 'date' as const,
+            value: filterDateFrom,
+            onChange: setFilterDateFrom,
+          },
+          {
+            label: 'To Date',
+            key: 'dateTo',
+            type: 'date' as const,
+            value: filterDateTo,
+            onChange: setFilterDateTo,
+          },
+        ]}
+      />
 
       {/* Attendance Table */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
@@ -323,66 +275,102 @@ export default function AttendanceManagement({ initialAttendance }: AttendanceMa
                   </td>
                 </tr>
               ) : (
-                paginatedAttendance.map((attendance) => (
-                  <tr key={attendance._id} className="hover:bg-gray-50">
-                    {showEmployeeColumn && attendance.userId && (
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <div className="flex items-center gap-3">
-                          <UserAvatar
-                            name={attendance.userId.name}
-                            image={attendance.userId.profileImage}
-                            size="md"
-                          />
-                          <div>
-                            <div className="text-sm font-medium text-gray-900 font-secondary">
-                              {attendance.userId.name}
+                paginatedAttendance.map((attendance, index) => {
+                  // Check if this is the first row or if the date has changed
+                  const prevAttendance = index > 0 ? paginatedAttendance[index - 1] : null;
+                  const currentDate = new Date(attendance.date).toDateString();
+                  const prevDate = prevAttendance ? new Date(prevAttendance.date).toDateString() : null;
+                  const shouldShowSeparator = prevDate && currentDate !== prevDate;
+
+                  return (
+                    <>
+                      {shouldShowSeparator && (
+                        <tr key={`separator-${attendance._id}`}>
+                          <td
+                            colSpan={showEmployeeColumn ? 6 : 5}
+                            className="px-4 py-2 bg-gray-100"
+                          >
+                            <div className="text-sm font-semibold text-gray-700 font-secondary">
+                              {formatDate(attendance.date)}
                             </div>
-                            <div className="text-xs text-gray-500 font-secondary">{attendance.userId.email}</div>
-                          </div>
-                        </div>
-                      </td>
-                    )}
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <div className="text-sm text-gray-900 font-secondary">{formatDate(attendance.date)}</div>
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <div className="flex items-center gap-1.5 text-sm text-gray-900 font-secondary">
-                        <Clock className="w-3.5 h-3.5 text-green-600" />
-                        {formatTime(attendance.clockIn)}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      {attendance.clockOut ? (
-                        <div className="flex items-center gap-1.5 text-sm text-gray-900 font-secondary">
-                          <Clock className="w-3.5 h-3.5 text-red-600" />
-                          {formatTime(attendance.clockOut)}
-                        </div>
-                      ) : (
-                        <span className="text-xs text-gray-400 font-secondary">Not clocked out</span>
+                          </td>
+                        </tr>
                       )}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <div className="text-sm text-gray-900 font-secondary">
-                        {attendance.hoursWorked
-                          ? `${attendance.hoursWorked.toFixed(2)} hrs`
-                          : 'N/A'}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <span
-                        className={`px-2 py-0.5 text-xs font-medium rounded-full font-secondary ${
-                          attendance.status === 'present'
-                            ? 'bg-green-100 text-green-800'
-                            : attendance.status === 'absent'
-                            ? 'bg-red-100 text-red-800'
-                            : 'bg-yellow-100 text-yellow-800'
-                        }`}
-                      >
-                        {attendance.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))
+                      <tr key={attendance._id} className="hover:bg-gray-50">
+                        {showEmployeeColumn && attendance.userId && (
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <div className="flex items-center gap-3">
+                              <UserAvatar
+                                name={attendance.userId.name}
+                                image={attendance.userId.profileImage}
+                                size="md"
+                              />
+                              <div>
+                                <div className="text-sm font-medium text-gray-900 font-secondary">
+                                  {attendance.userId.name}
+                                </div>
+                                <div className="text-xs text-gray-500 font-secondary">{attendance.userId.email}</div>
+                              </div>
+                            </div>
+                          </td>
+                        )}
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <div className="text-sm text-gray-900 font-secondary">{formatDate(attendance.date)}</div>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <div className="flex items-center gap-1.5 text-sm text-gray-900 font-secondary">
+                            <Clock className="w-3.5 h-3.5 text-green-600" />
+                            {formatTime(attendance.clockIn)}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          {attendance.clockOut ? (
+                            <div className="flex items-center gap-1.5 text-sm text-gray-900 font-secondary">
+                              <Clock className="w-3.5 h-3.5 text-red-600" />
+                              {formatTime(attendance.clockOut)}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-gray-400 font-secondary">Not clocked out</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <div className="text-sm text-gray-900 font-secondary">
+                            {attendance.hoursWorked
+                              ? `${attendance.hoursWorked.toFixed(2)} hrs`
+                              : 'N/A'}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          {attendance.clockOut ? (
+                            <span className="px-2 py-0.5 text-xs font-medium rounded-full font-secondary bg-green-100 text-green-800">
+                              Completed
+                            </span>
+                          ) : attendance.clockIn ? (() => {
+                            const attendanceDate = new Date(attendance.date);
+                            attendanceDate.setHours(0, 0, 0, 0);
+                            const today = new Date();
+                            today.setHours(0, 0, 0, 0);
+                            const isDatePassed = attendanceDate < today;
+                            
+                            return isDatePassed ? (
+                              <span className="px-2 py-0.5 text-xs font-medium rounded-full font-secondary bg-red-100 text-red-800">
+                                Not clocked out
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 text-xs font-medium rounded-full font-secondary bg-blue-100 text-blue-800">
+                                Working
+                              </span>
+                            );
+                          })() : (
+                            <span className="px-2 py-0.5 text-xs font-medium rounded-full font-secondary bg-red-100 text-red-800">
+                              Not clocked out
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    </>
+                  );
+                })
               )}
             </tbody>
           </table>

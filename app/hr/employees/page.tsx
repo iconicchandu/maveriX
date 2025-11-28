@@ -26,7 +26,7 @@ export default async function HREmployeesPage() {
           </div>
         </div>
 
-        <EmployeeManagement initialEmployees={JSON.parse(JSON.stringify(employees))} />
+        <EmployeeManagement initialEmployees={JSON.parse(JSON.stringify(employees))} canChangeRole={false} />
       </div>
     </DashboardLayout>
   );
