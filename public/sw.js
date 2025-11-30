@@ -1,8 +1,9 @@
 // Service Worker for MM HRM PWA
 // Version: 1.0.0 - Auto-incremented on build
+// IMPORTANT: Update CACHE_NAME version to trigger update popup for users
 
-const CACHE_NAME = 'mm-hrm-v1.0.2'; // Updated to fix iOS redirect issue
-const RUNTIME_CACHE = 'mm-hrm-runtime-v1.0.0';
+const CACHE_NAME = 'mm-hrm-v1.0.4'; // ⬅️ UPDATE THIS VERSION NUMBER to trigger update popup
+const RUNTIME_CACHE = 'mm-hrm-runtime-v1.0.1';
 const OFFLINE_PAGE = '/offline.html';
 
 // Assets to cache on install
@@ -28,8 +29,9 @@ self.addEventListener('install', (event) => {
         return cache.addAll(STATIC_ASSETS.map(url => new Request(url, { cache: 'reload' })));
       })
       .then(() => {
-        // Force the waiting service worker to become the active service worker
-        return self.skipWaiting();
+        // Don't skip waiting - let the user choose when to update via popup
+        // The service worker will wait until user clicks "Update Now"
+        console.log('[Service Worker] Installed and waiting for activation');
       })
       .catch((error) => {
         console.error('[Service Worker] Install failed:', error);
@@ -39,7 +41,7 @@ self.addEventListener('install', (event) => {
 
 // Activate event - clean up old caches
 self.addEventListener('activate', (event) => {
-  console.log('[Service Worker] Activating...');
+  console.log('[Service Worker] Activating...', CACHE_NAME);
   
   event.waitUntil(
     caches.keys()
@@ -53,6 +55,17 @@ self.addEventListener('activate', (event) => {
             }
           })
         );
+      })
+      .then(() => {
+        // Notify all clients about the update
+        return self.clients.matchAll().then((clients) => {
+          clients.forEach((client) => {
+            client.postMessage({
+              type: 'SW_UPDATED',
+              cacheName: CACHE_NAME,
+            });
+          });
+        });
       })
       .then(() => {
         // Take control of all pages immediately
@@ -85,6 +98,13 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // CRITICAL: Don't cache Next.js build artifacts (CSS, JS chunks) - let Next.js handle them
+  // These files are dynamically generated and can cause 404 errors if cached incorrectly
+  if (url.pathname.startsWith('/_next/static/')) {
+    // Let Next.js handle these files directly - don't intercept
+    return;
+  }
+
   // Skip API routes that need fresh data (but cache some GET APIs)
   if (url.pathname.startsWith('/api/')) {
     // Cache some API responses for offline use
@@ -101,7 +121,8 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // For static assets (images, CSS, JS), use cache-first strategy
+  // For static assets (images from /assets, /icons, /manifest.json), use cache-first strategy
+  // But skip Next.js build artifacts which are handled above
   event.respondWith(
     cacheFirstStrategy(request)
   );
