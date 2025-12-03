@@ -26,16 +26,18 @@ export async function GET(request: NextRequest) {
     // CRITICAL: 
     // 1. Only include leaves with status exactly 'approved' (exclude 'pending' and 'rejected')
     // 2. Exclude allotted leaves (where allottedBy exists) - these are just balance allocations, not actual leave applications
+    // 3. Exclude penalty leaves (leaves deducted for late clock-in)
     const leavesOnLeaveToday = await Leave.find({
       status: 'approved', // Only approved status
       allottedBy: { $exists: false }, // Exclude allotted leaves - only actual leave requests
       startDate: { $lte: endOfToday },
       endDate: { $gte: today },
+      reason: { $not: { $regex: /penalty|clock.*in.*late|exceeded.*max.*late|auto.*deduct/i } }, // Exclude penalty-related leaves
     })
-      .select('userId status startDate endDate allottedBy') // Include fields for verification
+      .select('userId status startDate endDate allottedBy reason') // Include fields for verification
       .lean();
 
-    // Triple-check: filter out any non-approved leaves, allotted leaves, and verify dates
+    // Triple-check: filter out any non-approved leaves, allotted leaves, penalty leaves, and verify dates
     const approvedLeavesOnly = leavesOnLeaveToday.filter((leave: any) => {
       // Ensure status is exactly 'approved' (string comparison)
       if (leave.status !== 'approved') {
@@ -44,6 +46,11 @@ export async function GET(request: NextRequest) {
       
       // Ensure this is NOT an allotted leave (allottedBy should not exist)
       if (leave.allottedBy) {
+        return false;
+      }
+      
+      // Exclude penalty-related leaves (leaves deducted for late clock-in penalties)
+      if (leave.reason && /penalty|clock.*in.*late|exceeded.*max.*late|auto.*deduct/i.test(leave.reason)) {
         return false;
       }
       

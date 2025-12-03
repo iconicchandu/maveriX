@@ -2,11 +2,12 @@
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { format, startOfDay, isSameDay, parseISO, startOfMonth, endOfMonth, startOfYear, endOfYear } from 'date-fns';
-import { Clock, Calendar, ChevronLeft, ChevronRight, Search } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { Clock, Calendar, ChevronLeft, ChevronRight, Search, X, AlertCircle } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useSearchParams } from 'next/navigation';
 import UserAvatar from './UserAvatar';
 import LoadingDots from './LoadingDots';
+import { formatTimeString12Hour, formatHoursToHHMMSS } from '@/lib/timeUtils';
 
 interface Attendance {
   _id: string;
@@ -31,6 +32,7 @@ interface Employee {
   designation?: string;
   role?: string;
   weeklyOff?: string[];
+  clockInTime?: string; // Individual clock-in time limit (HH:mm format or "N/R")
 }
 
 interface DailyAttendance {
@@ -54,6 +56,10 @@ export default function AttendanceManagement({ initialAttendance, isAdminOrHR = 
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [employeesOnLeave, setEmployeesOnLeave] = useState<Set<string>>(new Set());
+  const [penalties, setPenalties] = useState<Map<string, any>>(new Map());
+  const [defaultTimeLimit, setDefaultTimeLimit] = useState<string>('');
+  const [userClockInTime, setUserClockInTime] = useState<string | undefined>(undefined);
+  const [selectedPenalty, setSelectedPenalty] = useState<any | null>(null);
   
   // Month filter for personal attendance view (auto-detect current month)
   const [selectedMonth, setSelectedMonth] = useState(() => {
@@ -92,6 +98,78 @@ export default function AttendanceManagement({ initialAttendance, isAdminOrHR = 
     }
   }, [selectedDate]);
 
+  const fetchPenalties = useCallback(async () => {
+    if (!isAdminOrHR) {
+      // For employees, fetch penalties for all dates in the current month
+      try {
+        const penaltyMap = new Map();
+        
+        // Get all unique dates from attendance records in the current month
+        const monthStart = startOfMonth(selectedMonth);
+        const monthEnd = endOfMonth(selectedMonth);
+        const attendanceDates = new Set<string>();
+        
+        initialAttendance.forEach((att) => {
+          const attDate = parseISO(att.date);
+          if (attDate >= monthStart && attDate <= monthEnd) {
+            attendanceDates.add(format(attDate, 'yyyy-MM-dd'));
+          }
+        });
+        
+        // Fetch penalties for each date
+        const penaltyPromises = Array.from(attendanceDates).map(async (dateStr) => {
+          try {
+            const res = await fetch(`/api/attendance/penalty?date=${dateStr}`);
+            const data = await res.json();
+            if (res.ok && data.hasPenalty) {
+              // Store penalty with date as key
+              penaltyMap.set(dateStr, data.penaltyDetails);
+            }
+          } catch (err) {
+            console.error(`Error fetching penalty for date ${dateStr}:`, err);
+          }
+        });
+        
+        await Promise.all(penaltyPromises);
+        // For employees, also store with 'self' key for backward compatibility
+        if (penaltyMap.size > 0) {
+          // Get the most recent penalty (if multiple)
+          const latestPenalty = Array.from(penaltyMap.values())[0];
+          penaltyMap.set('self', latestPenalty);
+        }
+        setPenalties(penaltyMap);
+      } catch (err) {
+        console.error('Error fetching penalties:', err);
+        setPenalties(new Map());
+      }
+    } else {
+      // For admin/HR, fetch penalties for all employees on the selected date
+      try {
+        const dateStr = format(selectedDate, 'yyyy-MM-dd');
+        const penaltyMap = new Map();
+        
+        // Fetch penalties for each employee
+        const employeeIds = employees.map(emp => emp._id);
+        const penaltyPromises = employeeIds.map(async (userId) => {
+          try {
+            const res = await fetch(`/api/attendance/penalty?userId=${userId}&date=${dateStr}`);
+            const data = await res.json();
+            if (res.ok && data.hasPenalty) {
+              penaltyMap.set(userId, data.penaltyDetails);
+            }
+          } catch (err) {
+            console.error(`Error fetching penalty for user ${userId}:`, err);
+          }
+        });
+        
+        await Promise.all(penaltyPromises);
+        setPenalties(penaltyMap);
+      } catch (err) {
+        console.error('Error fetching penalties:', err);
+      }
+    }
+  }, [selectedDate, selectedMonth, employees, isAdminOrHR, initialAttendance]);
+
   const fetchAllEmployees = useCallback(async () => {
     try {
       setLoading(true);
@@ -107,6 +185,59 @@ export default function AttendanceManagement({ initialAttendance, isAdminOrHR = 
       setLoading(false);
     }
   }, []);
+
+  const fetchDefaultTimeLimit = useCallback(async () => {
+    try {
+      const res = await fetch('/api/settings/clock-in-time-limit');
+      const data = await res.json();
+      if (res.ok && data.defaultClockInTimeLimit) {
+        setDefaultTimeLimit(data.defaultClockInTimeLimit);
+      }
+    } catch (err) {
+      console.error('Error fetching default time limit:', err);
+    }
+  }, []);
+
+  const fetchUserClockInTime = useCallback(async () => {
+    if (!isAdminOrHR) {
+      // For employees and HR viewing their own attendance, fetch their own clockInTime
+      try {
+        const res = await fetch('/api/profile');
+        const data = await res.json();
+        if (res.ok && data.user) {
+          // Set clockInTime if available, or undefined if not set (will use default)
+          setUserClockInTime(data.user.clockInTime || undefined);
+        }
+      } catch (err) {
+        console.error('Error fetching user clockInTime:', err);
+      }
+    }
+  }, [isAdminOrHR]);
+
+  // Helper function to check if clock-in is late
+  const isLateClockIn = useCallback((clockInTime: string, userClockInTime?: string): boolean => {
+    if (!clockInTime) return false;
+    
+    const clockIn = new Date(clockInTime);
+    const clockInHours = clockIn.getHours();
+    const clockInMinutes = clockIn.getMinutes();
+    const clockInTotalMinutes = clockInHours * 60 + clockInMinutes;
+    
+    // Get time limit (user's custom or default)
+    let timeLimit = '';
+    if (userClockInTime && userClockInTime !== 'N/R') {
+      timeLimit = userClockInTime;
+    } else if (defaultTimeLimit) {
+      timeLimit = defaultTimeLimit;
+    }
+    
+    if (!timeLimit) return false;
+    
+    const [limitHours, limitMinutes] = timeLimit.split(':').map(Number);
+    const limitTotalMinutes = limitHours * 60 + limitMinutes;
+    
+    return clockInTotalMinutes > limitTotalMinutes;
+  }, [defaultTimeLimit]);
 
   const fetchAttendance = useCallback(async () => {
     try {
@@ -128,13 +259,27 @@ export default function AttendanceManagement({ initialAttendance, isAdminOrHR = 
     }
   }, [isAdminOrHR, fetchAllEmployees]);
 
+  // Fetch default time limit
+  useEffect(() => {
+    fetchDefaultTimeLimit();
+  }, [fetchDefaultTimeLimit]);
+
+  // Fetch user clockInTime for employee view
+  useEffect(() => {
+    fetchUserClockInTime();
+  }, [fetchUserClockInTime]);
+
   // Fetch attendance when date changes
   useEffect(() => {
     if (isAdminOrHR) {
       fetchAttendance();
       fetchEmployeesOnLeave();
+      fetchPenalties();
+    } else {
+      // For employees, fetch penalties for the month view
+      fetchPenalties();
     }
-  }, [isAdminOrHR, selectedDate, fetchAttendance, fetchEmployeesOnLeave]);
+  }, [isAdminOrHR, selectedDate, selectedMonth, fetchAttendance, fetchEmployeesOnLeave, fetchPenalties]);
 
   const formatTime = (dateString: string) => {
     return format(new Date(dateString), 'hh:mm a');
@@ -288,7 +433,8 @@ export default function AttendanceManagement({ initialAttendance, isAdminOrHR = 
     const isToday = isSameDay(selectedDate, new Date());
 
     return (
-      <div className="space-y-4">
+      <>
+        <div className="space-y-4">
         {/* Date Navigation */}
         <div className="bg-white/95 backdrop-blur-xl rounded-2xl shadow-lg border border-white/50 p-4">
           <div className="flex items-center justify-between flex-wrap gap-4">
@@ -408,9 +554,9 @@ export default function AttendanceManagement({ initialAttendance, isAdminOrHR = 
             <p className="text-gray-600 font-secondary">No employees found</p>
           </div>
         ) : (
-          <div className="bg-white/95 backdrop-blur-xl rounded-2xl shadow-lg border border-white/50 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full">
+          <div className="bg-white/95 backdrop-blur-xl rounded-2xl shadow-lg border border-white/50">
+            <div className="overflow-x-auto" style={{ overflowY: 'visible' }}>
+              <table className="w-full" style={{ overflow: 'visible' }}>
                 <thead className="bg-gradient-to-r from-blue-50 to-indigo-50">
                   <tr>
                     <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 uppercase font-primary">
@@ -423,14 +569,14 @@ export default function AttendanceManagement({ initialAttendance, isAdminOrHR = 
                       Clock Out
                     </th>
                     <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 uppercase font-primary">
-                      Hours Worked
+                      Total
                     </th>
                     <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 uppercase font-primary">
                       Status
                     </th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-100">
+                <tbody className="bg-white divide-y divide-gray-100" style={{ overflow: 'visible' }}>
                   {dailyAttendance.employees.map((item, index) => {
                     const att = item.attendance;
                     const hasClockedIn = !!att?.clockIn;
@@ -455,15 +601,15 @@ export default function AttendanceManagement({ initialAttendance, isAdminOrHR = 
                             : 'hover:bg-gray-50'
                         }`}
                       >
-                        <td className="px-4 py-4 whitespace-nowrap">
+                        <td className="px-4 py-4 whitespace-nowrap overflow-visible">
                           <div className="flex items-center gap-2.5">
                             <UserAvatar
                               name={item.employee.name}
                               image={item.employee.profileImage}
                               size="sm"
                             />
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2 flex-wrap">
+                            <div className="min-w-0 flex-1 overflow-visible">
+                              <div className="flex items-center gap-2 flex-wrap overflow-visible">
                                 <span className={`text-sm font-semibold font-primary ${
                                   isOnLeave 
                                     ? 'text-orange-900' 
@@ -483,12 +629,37 @@ export default function AttendanceManagement({ initialAttendance, isAdminOrHR = 
                                     {item.employee.designation}
                                   </span>
                                 )}
-                                {isOnLeave && (
-                                  <span className="px-2 py-0.5 text-[10px] font-semibold rounded-full font-secondary bg-orange-200 text-orange-800 whitespace-nowrap flex items-center gap-1">
-                                    <Calendar className="w-3 h-3" />
-                                    On Leave Today
-                                  </span>
-                                )}
+                                {(() => {
+                                  const employeeId = item.employee._id;
+                                  const penalty = penalties.get(employeeId);
+                                  // Show penalty tag only on the date when penalty was actually created
+                                  const selectedDateStr = format(selectedDate, 'yyyy-MM-dd');
+                                  const isPenaltyDate = penalty && (
+                                    penalty.penaltyDate === selectedDateStr || 
+                                    penalty.lateArrivalDate === selectedDateStr
+                                  );
+                                  const hasPenalty = isPenaltyDate && penalty && penalty.penaltyAmount > 0;
+                                  
+                                  if (hasPenalty) {
+                                    return (
+                                      <button
+                                        onClick={() => setSelectedPenalty(penalty)}
+                                        className="px-2 py-0.5 text-[10px] font-semibold rounded-full font-secondary bg-red-200 text-red-800 whitespace-nowrap flex items-center gap-1 cursor-pointer hover:bg-red-300 transition-colors"
+                                      >
+                                        <Clock className="w-3 h-3" />
+                                        Penalty
+                                      </button>
+                                    );
+                                  } else if (isOnLeave) {
+                                    return (
+                                      <span className="px-2 py-0.5 text-[10px] font-semibold rounded-full font-secondary bg-orange-200 text-orange-800 whitespace-nowrap flex items-center gap-1">
+                                        <Calendar className="w-3 h-3" />
+                                        On Leave Today
+                                      </span>
+                                    );
+                                  }
+                                  return null;
+                                })()}
                                 {isWeeklyOff && !isOnLeave && (
                                   <span className="px-2 py-0.5 text-[10px] font-semibold rounded-full font-secondary bg-purple-100 text-purple-700 whitespace-nowrap flex items-center gap-1">
                                     <Clock className="w-3 h-3" />
@@ -508,16 +679,34 @@ export default function AttendanceManagement({ initialAttendance, isAdminOrHR = 
                             </div>
                           </div>
                         </td>
-                        <td className="px-4 py-2 whitespace-nowrap">
-                          {hasClockedIn ? (
-                            <div className="flex items-center gap-1.5 text-sm text-gray-900 font-secondary">
-                              <Clock className="w-3.5 h-3.5 text-green-600 flex-shrink-0" />
-                              <span className="font-medium">{formatTime(att!.clockIn)}</span>
+                  <td className="px-4 py-2 whitespace-nowrap">
+                    {hasClockedIn ? (
+                      <div className="flex items-center gap-1.5 text-sm text-gray-900 font-secondary">
+                        <Clock className="w-3.5 h-3.5 text-green-600 flex-shrink-0" />
+                        <span className="font-medium">{formatTime(att!.clockIn)}</span>
+                        {isLateClockIn(att!.clockIn, item.employee.clockInTime) && (() => {
+                          const timeLimit = item.employee.clockInTime && item.employee.clockInTime !== 'N/R' 
+                            ? item.employee.clockInTime 
+                            : defaultTimeLimit || '';
+                          return (
+                            <div className="relative group">
+                              <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded-full font-secondary bg-orange-100 text-orange-700 whitespace-nowrap flex items-center gap-1 cursor-help">
+                                <AlertCircle className="w-3 h-3" />
+                                Late
+                              </span>
+                              {timeLimit && (
+                                <div className="absolute left-0 top-full mt-1 px-2 py-1 bg-gray-900 text-white text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10">
+                                  Time limit: {formatTimeString12Hour(timeLimit)}
+                                </div>
+                              )}
                             </div>
-                          ) : (
-                            <span className="text-xs text-gray-400 font-secondary italic">Not clocked in</span>
-                          )}
-                        </td>
+                          );
+                        })()}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-gray-400 font-secondary italic">Not clocked in</span>
+                    )}
+                  </td>
                         <td className="px-4 py-2 whitespace-nowrap">
                           {hasClockedOut ? (
                             <div className="flex items-center gap-1.5 text-sm text-gray-900 font-secondary">
@@ -533,7 +722,7 @@ export default function AttendanceManagement({ initialAttendance, isAdminOrHR = 
                         <td className="px-4 py-2 whitespace-nowrap">
                           {att?.hoursWorked ? (
                             <span className="text-sm font-semibold text-gray-900 font-secondary">
-                              {att.hoursWorked.toFixed(2)} hrs
+                              {formatHoursToHHMMSS(att.hoursWorked)}
                             </span>
                           ) : (
                             <span className="text-xs text-gray-400 font-secondary">-</span>
@@ -562,12 +751,134 @@ export default function AttendanceManagement({ initialAttendance, isAdminOrHR = 
             </div>
           </div>
         )}
-      </div>
+        </div>
+
+        {/* Penalty Details Modal */}
+        <AnimatePresence>
+          {selectedPenalty && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              {/* Backdrop */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setSelectedPenalty(null)}
+                className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+              />
+              
+              {/* Modal - Centered */}
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                transition={{ type: 'spring', damping: 20, stiffness: 300 }}
+                className="relative bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden w-full max-w-sm"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Header */}
+                <div className="flex items-center justify-between px-3 py-2 border-b border-gray-200 bg-gradient-to-r from-red-50 to-orange-50">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1 bg-red-100 rounded">
+                      <Clock className="w-4 h-4 text-red-600" />
+                    </div>
+                    <h3 className="text-base font-primary font-bold text-gray-800">
+                      Penalty Details
+                    </h3>
+                  </div>
+                  <button
+                    onClick={() => setSelectedPenalty(null)}
+                    className="p-1 hover:bg-gray-100 rounded transition-colors"
+                  >
+                    <X className="w-4 h-4 text-gray-600" />
+                  </button>
+                </div>
+
+                {/* Content */}
+                <div className="p-3 space-y-2 max-h-[60vh] overflow-y-auto">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between px-2.5 py-1.5 bg-red-50 rounded">
+                      <span className="text-xs font-secondary text-gray-700">Penalty:</span>
+                      <span className="text-xs font-semibold font-primary text-red-700">
+                        {selectedPenalty.penaltyAmount} Casual Leave Deducted
+                      </span>
+                    </div>
+                    
+                    <div className="flex items-center justify-between px-2.5 py-1.5 bg-gray-50 rounded">
+                      <span className="text-xs font-secondary text-gray-700">Max Late Days:</span>
+                      <span className="text-xs font-semibold font-primary text-gray-900">
+                        {selectedPenalty.maxLateDays}
+                      </span>
+                    </div>
+                    
+                    <div className="flex items-center justify-between px-2.5 py-1.5 bg-gray-50 rounded">
+                      <span className="text-xs font-secondary text-gray-700">Late Arrivals:</span>
+                      <span className="text-xs font-semibold font-primary text-gray-900">
+                        {selectedPenalty.lateArrivalCount}
+                      </span>
+                    </div>
+
+                    {/* Casual Leave Information */}
+                    {selectedPenalty.casualLeave && (
+                      <div className="mt-2 pt-2 border-t border-gray-200 space-y-1.5">
+                        <h4 className="text-xs font-semibold font-primary text-gray-800 mb-1.5">
+                          Casual Leave Impact
+                        </h4>
+                        <div className="flex items-center justify-between px-2.5 py-1.5 bg-blue-50 rounded">
+                          <span className="text-xs font-secondary text-gray-700">Total Casual Leave:</span>
+                          <span className="text-xs font-semibold font-primary text-blue-700">
+                            {selectedPenalty.casualLeave.total} days
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between px-2.5 py-1.5 bg-orange-50 rounded">
+                          <span className="text-xs font-secondary text-gray-700">Deducted (Penalty):</span>
+                          <span className="text-xs font-semibold font-primary text-orange-700">
+                            -{selectedPenalty.casualLeave.deducted} days
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between px-2.5 py-1.5 bg-green-50 rounded">
+                          <span className="text-xs font-secondary text-gray-700">Updated Leave:</span>
+                          <span className="text-xs font-semibold font-primary text-green-700">
+                            {selectedPenalty.casualLeave.remaining} days
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {selectedPenalty.lateArrivals && selectedPenalty.lateArrivals.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-gray-200">
+                        <h4 className="text-xs font-semibold font-primary text-gray-800 mb-2">
+                          Late Days History
+                        </h4>
+                        <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                          {selectedPenalty.lateArrivals.map((arrival: any, idx: number) => (
+                            <div key={idx} className="px-2 py-1.5 bg-gray-50 rounded border border-gray-200">
+                              <div className="text-[10px] font-secondary text-gray-600 mb-0.5">
+                                {arrival.date}
+                              </div>
+                              <div className="text-xs font-primary text-gray-900">
+                                Clock In: <span className="font-semibold">{formatTimeString12Hour(arrival.clockInTime)}</span>
+                              </div>
+                              <div className="text-[10px] font-secondary text-gray-500">
+                                Limit: {formatTimeString12Hour(selectedPenalty.timeLimit)}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+      </>
     );
   } else {
     // For employees: Show month filter and filtered attendance
     return (
-      <div className="space-y-4">
+      <>
+        <div className="space-y-4">
         {/* Month Filter Navigation */}
         <div className="bg-white/95 backdrop-blur-xl rounded-2xl shadow-lg border border-white/50 p-4">
           <div className="flex items-center justify-between gap-4">
@@ -617,9 +928,9 @@ export default function AttendanceManagement({ initialAttendance, isAdminOrHR = 
             <p className="text-gray-600 font-secondary">No attendance records found for {monthDisplay}</p>
           </div>
         ) : (
-          <div className="bg-white/95 backdrop-blur-xl rounded-2xl shadow-lg border border-white/50 overflow-hidden">
-            <div className="overflow-x-auto">
-          <table className="w-full">
+          <div className="bg-white/95 backdrop-blur-xl rounded-2xl shadow-lg border border-white/50">
+            <div className="overflow-x-auto" style={{ overflowY: 'visible' }}>
+          <table className="w-full" style={{ overflow: 'visible' }}>
             <thead className="bg-gradient-to-r from-blue-50 to-indigo-50">
               <tr>
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-700 uppercase font-primary">
@@ -632,14 +943,14 @@ export default function AttendanceManagement({ initialAttendance, isAdminOrHR = 
                   Clock Out
                 </th>
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-700 uppercase font-primary">
-                  Hours
+                  Total
                 </th>
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-700 uppercase font-primary">
                   Status
                 </th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-100">
+            <tbody className="bg-white divide-y divide-gray-100" style={{ overflow: 'visible' }}>
               {filteredAttendanceByMonth.map((attendance) => (
                 <tr key={attendance._id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-4 py-3 whitespace-nowrap">
@@ -649,6 +960,24 @@ export default function AttendanceManagement({ initialAttendance, isAdminOrHR = 
                     <div className="flex items-center gap-1.5 text-sm text-gray-900 font-secondary">
                       <Clock className="w-3.5 h-3.5 text-green-600" />
                       {formatTime(attendance.clockIn)}
+                      {isLateClockIn(attendance.clockIn, userClockInTime) && (() => {
+                        const timeLimit = userClockInTime && userClockInTime !== 'N/R' 
+                          ? userClockInTime 
+                          : defaultTimeLimit || '';
+                        return (
+                          <div className="relative group">
+                            <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded-full font-secondary bg-orange-100 text-orange-700 whitespace-nowrap flex items-center gap-1 cursor-help">
+                              <AlertCircle className="w-3 h-3" />
+                              Late
+                            </span>
+                            {timeLimit && (
+                              <div className="absolute left-0 top-full mt-1 px-2 py-1 bg-gray-900 text-white text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10">
+                                Time limit: {formatTimeString12Hour(timeLimit)}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
@@ -663,19 +992,44 @@ export default function AttendanceManagement({ initialAttendance, isAdminOrHR = 
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <div className="text-sm text-gray-900 font-secondary">
-                      {attendance.hoursWorked ? `${attendance.hoursWorked.toFixed(2)} hrs` : 'N/A'}
+                      {attendance.hoursWorked ? formatHoursToHHMMSS(attendance.hoursWorked) : 'N/A'}
                     </div>
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    {attendance.clockOut ? (
-                      <span className="px-2 py-0.5 text-xs font-medium rounded-full font-secondary bg-green-100 text-green-800">
-                        Completed
-                      </span>
-                    ) : (
-                      <span className="px-2 py-0.5 text-xs font-medium rounded-full font-secondary bg-blue-100 text-blue-800">
-                        Working
-                      </span>
-                    )}
+                  <td className="px-4 py-3 whitespace-nowrap overflow-visible">
+                    <div className="flex items-center gap-2 overflow-visible">
+                      {attendance.clockOut ? (
+                        <span className="px-2 py-0.5 text-xs font-medium rounded-full font-secondary bg-green-100 text-green-800">
+                          Completed
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 text-xs font-medium rounded-full font-secondary bg-blue-100 text-blue-800">
+                          Working
+                        </span>
+                      )}
+                      {(() => {
+                        const attendanceDate = format(new Date(attendance.date), 'yyyy-MM-dd');
+                        // For employees, check penalty for this specific date
+                        const penalty = penalties.get(attendanceDate) || penalties.get('self');
+                        // Show penalty tag only on the date when penalty was actually created
+                        // Check if this date matches the penalty date (when penalty was created)
+                        const isPenaltyDate = penalty && (
+                          penalty.penaltyDate === attendanceDate || 
+                          penalty.lateArrivalDate === attendanceDate
+                        );
+                        
+                        if (isPenaltyDate) {
+                          return (
+                            <button
+                              onClick={() => setSelectedPenalty(penalty)}
+                              className="px-2 py-0.5 text-xs font-semibold rounded-full font-secondary bg-red-200 text-red-800 cursor-pointer hover:bg-red-300 transition-colors"
+                            >
+                              Penalty
+                            </button>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -684,7 +1038,128 @@ export default function AttendanceManagement({ initialAttendance, isAdminOrHR = 
             </div>
           </div>
         )}
-      </div>
+        </div>
+
+        {/* Penalty Details Modal */}
+        <AnimatePresence>
+          {selectedPenalty && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              {/* Backdrop */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setSelectedPenalty(null)}
+                className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+              />
+              
+              {/* Modal - Centered */}
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                transition={{ type: 'spring', damping: 20, stiffness: 300 }}
+                className="relative bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden w-full max-w-sm"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Header */}
+                <div className="flex items-center justify-between px-3 py-2 border-b border-gray-200 bg-gradient-to-r from-red-50 to-orange-50">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1 bg-red-100 rounded">
+                      <Clock className="w-4 h-4 text-red-600" />
+                    </div>
+                    <h3 className="text-base font-primary font-bold text-gray-800">
+                      Penalty Details
+                    </h3>
+                  </div>
+                  <button
+                    onClick={() => setSelectedPenalty(null)}
+                    className="p-1 hover:bg-gray-100 rounded transition-colors"
+                  >
+                    <X className="w-4 h-4 text-gray-600" />
+                  </button>
+                </div>
+
+                {/* Content */}
+                <div className="p-3 space-y-2 max-h-[60vh] overflow-y-auto">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between px-2.5 py-1.5 bg-red-50 rounded">
+                      <span className="text-xs font-secondary text-gray-700">Penalty:</span>
+                      <span className="text-xs font-semibold font-primary text-red-700">
+                        {selectedPenalty.penaltyAmount} Casual Leave Deducted
+                      </span>
+                    </div>
+                    
+                    <div className="flex items-center justify-between px-2.5 py-1.5 bg-gray-50 rounded">
+                      <span className="text-xs font-secondary text-gray-700">Max Late Days:</span>
+                      <span className="text-xs font-semibold font-primary text-gray-900">
+                        {selectedPenalty.maxLateDays}
+                      </span>
+                    </div>
+                    
+                    <div className="flex items-center justify-between px-2.5 py-1.5 bg-gray-50 rounded">
+                      <span className="text-xs font-secondary text-gray-700">Late Arrivals:</span>
+                      <span className="text-xs font-semibold font-primary text-gray-900">
+                        {selectedPenalty.lateArrivalCount}
+                      </span>
+                    </div>
+
+                    {/* Casual Leave Information */}
+                    {selectedPenalty.casualLeave && (
+                      <div className="mt-2 pt-2 border-t border-gray-200 space-y-1.5">
+                        <h4 className="text-xs font-semibold font-primary text-gray-800 mb-1.5">
+                          Casual Leave Impact
+                        </h4>
+                        <div className="flex items-center justify-between px-2.5 py-1.5 bg-blue-50 rounded">
+                          <span className="text-xs font-secondary text-gray-700">Total Casual Leave:</span>
+                          <span className="text-xs font-semibold font-primary text-blue-700">
+                            {selectedPenalty.casualLeave.total} days
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between px-2.5 py-1.5 bg-orange-50 rounded">
+                          <span className="text-xs font-secondary text-gray-700">Deducted (Penalty):</span>
+                          <span className="text-xs font-semibold font-primary text-orange-700">
+                            -{selectedPenalty.casualLeave.deducted} days
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between px-2.5 py-1.5 bg-green-50 rounded">
+                          <span className="text-xs font-secondary text-gray-700">Updated Leave:</span>
+                          <span className="text-xs font-semibold font-primary text-green-700">
+                            {selectedPenalty.casualLeave.remaining} days
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {selectedPenalty.lateArrivals && selectedPenalty.lateArrivals.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-gray-200">
+                        <h4 className="text-xs font-semibold font-primary text-gray-800 mb-2">
+                          Late Days History
+                        </h4>
+                        <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                          {selectedPenalty.lateArrivals.map((arrival: any, idx: number) => (
+                            <div key={idx} className="px-2 py-1.5 bg-gray-50 rounded border border-gray-200">
+                              <div className="text-[10px] font-secondary text-gray-600 mb-0.5">
+                                {arrival.date}
+                              </div>
+                              <div className="text-xs font-primary text-gray-900">
+                                Clock In: <span className="font-semibold">{formatTimeString12Hour(arrival.clockInTime)}</span>
+                              </div>
+                              <div className="text-[10px] font-secondary text-gray-500">
+                                Limit: {formatTimeString12Hour(selectedPenalty.timeLimit)}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+      </>
     );
   }
 }

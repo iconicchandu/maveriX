@@ -2,12 +2,14 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Edit, Trash2, Mail, User, Calendar } from 'lucide-react';
+import { Plus, Edit, Trash2, Mail, User, Calendar, Clock, Settings } from 'lucide-react';
 import { useToast } from '@/contexts/ToastContext';
+import { useSession } from 'next-auth/react';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
 import UserAvatar from './UserAvatar';
 import LoadingDots from './LoadingDots';
 import Pagination from './Pagination';
+import { formatTimeString12Hour } from '@/lib/timeUtils';
 
 interface Employee {
   _id: string;
@@ -19,6 +21,7 @@ interface Employee {
   approved?: boolean;
   profileImage?: string;
   weeklyOff?: string[];
+  clockInTime?: string;
   createdAt?: string;
 }
 
@@ -43,6 +46,7 @@ export default function EmployeeManagement({ initialEmployees, canChangeRole = t
     role: 'employee' as 'admin' | 'hr' | 'employee',
     designation: '',
     weeklyOff: [] as string[],
+    clockInTime: '',
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -54,21 +58,39 @@ export default function EmployeeManagement({ initialEmployees, canChangeRole = t
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
   const [employeesOnLeaveToday, setEmployeesOnLeaveToday] = useState<string[]>([]);
+  const [showTimeLimitModal, setShowTimeLimitModal] = useState(false);
+  const [defaultTimeLimit, setDefaultTimeLimit] = useState<string>('');
+  const [loadingTimeLimit, setLoadingTimeLimit] = useState(false);
+  const [maxLateDays, setMaxLateDays] = useState<number>(0);
+  const [noClockInRestrictions, setNoClockInRestrictions] = useState(false);
+  const { data: session } = useSession();
   const toast = useToast();
+
+  // Check if user is HR or Admin
+  const isHROrAdmin = session?.user && ((session.user as any).role === 'hr' || (session.user as any).role === 'admin');
 
   const handleOpenModal = (employee?: Employee) => {
     if (employee) {
       setEditingEmployee(employee);
+      // Check if clockInTime is "N/R" (no restrictions marker)
+      const clockInTimeValue = employee.clockInTime || '';
+      const hasNoRestrictions = clockInTimeValue === 'N/R' || clockInTimeValue.trim() === '';
+      // If it's "N/R", set clockInTime to empty for the form, otherwise use the actual value
+      const formClockInTime = clockInTimeValue === 'N/R' ? '' : clockInTimeValue;
+      console.log('[EmployeeManagement] Opening modal for employee:', employee.name, 'clockInTime:', clockInTimeValue, 'hasNoRestrictions:', hasNoRestrictions);
       setFormData({
         name: employee.name,
         email: employee.email,
         role: employee.role,
         designation: employee.designation || '',
         weeklyOff: employee.weeklyOff || [],
+        clockInTime: formClockInTime,
       });
+      setNoClockInRestrictions(hasNoRestrictions);
     } else {
       setEditingEmployee(null);
-      setFormData({ name: '', email: '', role: 'employee', designation: '', weeklyOff: [] });
+      setFormData({ name: '', email: '', role: 'employee', designation: '', weeklyOff: [], clockInTime: '' });
+      setNoClockInRestrictions(true);
     }
     setShowModal(true);
     setError('');
@@ -77,7 +99,8 @@ export default function EmployeeManagement({ initialEmployees, canChangeRole = t
   const handleCloseModal = () => {
     setShowModal(false);
     setEditingEmployee(null);
-    setFormData({ name: '', email: '', role: 'employee', designation: '', weeklyOff: [] });
+    setFormData({ name: '', email: '', role: 'employee', designation: '', weeklyOff: [], clockInTime: '' });
+    setNoClockInRestrictions(false);
     setError('');
   };
 
@@ -92,18 +115,43 @@ export default function EmployeeManagement({ initialEmployees, canChangeRole = t
         : '/api/users';
       const method = editingEmployee ? 'PUT' : 'POST';
 
-      // Don't send role if HR cannot change roles
-      const requestBody: any = canChangeRole 
-        ? { ...formData } 
-        : { ...formData, role: editingEmployee ? editingEmployee.role : 'employee' };
+      // Build request body explicitly to avoid issues with spreading
+      const requestBody: any = {
+        name: formData.name,
+        email: formData.email,
+        designation: formData.designation || undefined,
+        weeklyOff: Array.isArray(formData.weeklyOff) ? formData.weeklyOff : [],
+      };
 
-      // Ensure weeklyOff is always an array and is explicitly included
-      requestBody.weeklyOff = Array.isArray(formData.weeklyOff) ? formData.weeklyOff : [];
+      // Handle role based on permissions
+      if (canChangeRole) {
+        requestBody.role = formData.role;
+      } else {
+        requestBody.role = editingEmployee ? editingEmployee.role : 'employee';
+      }
+
+      // Handle clockInTime
+      // If "no restrictions" is checked, send "N/R" as a special marker
+      // Otherwise, send the time value or empty string
+      if (noClockInRestrictions) {
+        requestBody.clockInTime = 'N/R';
+        console.log('[EmployeeManagement] No restrictions selected, sending "N/R"');
+      } else if (editingEmployee) {
+        // When editing, always include clockInTime
+        // Get the value from formData, default to empty string if not set
+        const timeValue = formData.clockInTime ? String(formData.clockInTime).trim() : '';
+        requestBody.clockInTime = timeValue; // Always include, even if empty
+        console.log('[EmployeeManagement] clockInTime value for edit:', timeValue, 'Length:', timeValue.length, 'Type:', typeof timeValue, 'Original:', formData.clockInTime);
+      } else if (formData.clockInTime && formData.clockInTime.trim() !== '') {
+        // When creating, only include if it has a value
+        requestBody.clockInTime = formData.clockInTime.trim();
+      }
       
       // Debug logging
       console.log('[EmployeeManagement] Submitting form data:', formData);
       console.log('[EmployeeManagement] Request body:', requestBody);
       console.log('[EmployeeManagement] weeklyOff being sent:', requestBody.weeklyOff);
+      console.log('[EmployeeManagement] clockInTime being sent:', requestBody.clockInTime);
 
       const res = await fetch(url, {
         method,
@@ -127,18 +175,23 @@ export default function EmployeeManagement({ initialEmployees, canChangeRole = t
 
       // Update the employee in the local state immediately with the response data
       if (editingEmployee && data.user) {
+        const updatedEmployee = {
+          ...data.user,
+          weeklyOff: Array.isArray(data.user.weeklyOff) ? data.user.weeklyOff : [],
+          clockInTime: data.user.clockInTime || undefined,
+        };
+        console.log('[EmployeeManagement] Updating local state with:', {
+          name: updatedEmployee.name,
+          weeklyOff: updatedEmployee.weeklyOff,
+          clockInTime: updatedEmployee.clockInTime,
+        });
         setEmployees((prevEmployees) =>
           prevEmployees.map((emp) =>
-            emp._id === editingEmployee._id
-              ? {
-                  ...emp,
-                  ...data.user,
-                  weeklyOff: Array.isArray(data.user.weeklyOff) ? data.user.weeklyOff : [],
-                }
-              : emp
+            emp._id === editingEmployee._id ? updatedEmployee : emp
           )
         );
         console.log('[EmployeeManagement] Updated local state with response data');
+        console.log('[EmployeeManagement] Updated user clockInTime:', data.user.clockInTime);
       }
 
       // Refresh employee list to ensure consistency (including weeklyOff)
@@ -175,31 +228,29 @@ export default function EmployeeManagement({ initialEmployees, canChangeRole = t
     const id = deleteModal.employee._id;
     setDeleting(true);
 
-    // Optimistic update - remove immediately from UI
-    const previousEmployees = [...employees];
-    setEmployees(employees.filter((emp) => emp._id !== id));
-    toast.success('Employee deleted successfully');
-
     try {
       const res = await fetch(`/api/users/${id}`, { method: 'DELETE' });
+      const data = await res.json();
 
       if (!res.ok) {
-        // Revert on error
-        setEmployees(previousEmployees);
-        toast.error('Failed to delete employee');
+        // Show specific error message from API
+        toast.error(data.error || 'Failed to delete employee');
         setDeleting(false);
         setDeleteModal({ isOpen: false, employee: null });
         return;
       }
       
+      // Success - remove from UI and show success message
+      setEmployees(employees.filter((emp) => emp._id !== id));
+      toast.success('Employee deleted successfully');
+      
       // Refresh employee list to ensure consistency
       fetchEmployees();
       setDeleting(false);
       setDeleteModal({ isOpen: false, employee: null });
-    } catch (err) {
-      // Revert on error
-      setEmployees(previousEmployees);
-      toast.error('An error occurred');
+    } catch (err: any) {
+      // Network or other errors
+      toast.error(err.message || 'An error occurred while deleting employee');
       setDeleting(false);
       setDeleteModal({ isOpen: false, employee: null });
     }
@@ -222,16 +273,17 @@ export default function EmployeeManagement({ initialEmployees, canChangeRole = t
           .filter((u: Employee) => u.role !== 'admin')
           .map((u: Employee) => {
             const weeklyOffArray = Array.isArray(u.weeklyOff) ? u.weeklyOff : [];
-            console.log(`[EmployeeManagement] Employee ${u.name} weeklyOff:`, weeklyOffArray);
+            console.log(`[EmployeeManagement] Employee ${u.name} weeklyOff:`, weeklyOffArray, 'clockInTime:', u.clockInTime);
             return {
               ...u,
               weeklyOff: weeklyOffArray,
+              clockInTime: u.clockInTime || undefined,
               // Ensure all required fields are present
               emailVerified: u.emailVerified ?? false,
               approved: u.approved ?? false,
             };
           });
-        console.log('[EmployeeManagement] Fetched employees with weeklyOff:', filteredUsers.map((u: Employee) => ({ name: u.name, weeklyOff: u.weeklyOff })));
+        console.log('[EmployeeManagement] Fetched employees with weeklyOff:', filteredUsers.map((u: Employee) => ({ name: u.name, weeklyOff: u.weeklyOff, clockInTime: u.clockInTime })));
         setEmployees(filteredUsers);
       } else {
         console.error('Failed to fetch employees:', data.error || 'Unknown error');
@@ -261,9 +313,101 @@ export default function EmployeeManagement({ initialEmployees, canChangeRole = t
     }
   };
 
+  // Fetch default clock-in time limit
+  const fetchDefaultTimeLimit = async () => {
+    if (!isHROrAdmin) return;
+    
+    try {
+      const res = await fetch('/api/settings/clock-in-time-limit');
+      const data = await res.json();
+      if (res.ok && data.defaultClockInTimeLimit) {
+        setDefaultTimeLimit(data.defaultClockInTimeLimit);
+      }
+    } catch (err) {
+      console.error('Error fetching default time limit:', err);
+    }
+  };
+
+  // Fetch max late days
+  const fetchMaxLateDays = async () => {
+    if (!isHROrAdmin) return;
+    
+    try {
+      const res = await fetch('/api/settings/max-late-days');
+      const data = await res.json();
+      if (res.ok && data.maxLateDays !== undefined) {
+        setMaxLateDays(data.maxLateDays || 0);
+      }
+    } catch (err) {
+      console.error('Error fetching max late days:', err);
+    }
+  };
+
+  // Save default clock-in time limit and max late days
+  const handleSaveTimeLimit = async () => {
+    if (!defaultTimeLimit) {
+      toast.error('Please enter a time limit');
+      return;
+    }
+
+    // Validate time format (HH:mm)
+    const timeRegex = /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/;
+    if (!timeRegex.test(defaultTimeLimit)) {
+      toast.error('Invalid time format. Please use HH:mm format (e.g., 09:30)');
+      return;
+    }
+
+    if (maxLateDays < 0) {
+      toast.error('Max late days must be 0 or greater');
+      return;
+    }
+
+    setLoadingTimeLimit(true);
+    try {
+      // Save time limit
+      const timeLimitRes = await fetch('/api/settings/clock-in-time-limit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ timeLimit: defaultTimeLimit }),
+      });
+
+      const timeLimitData = await timeLimitRes.json();
+
+      if (!timeLimitRes.ok) {
+        toast.error(timeLimitData.error || 'Failed to update default time limit');
+        setLoadingTimeLimit(false);
+        return;
+      }
+
+      // Save max late days
+      const maxDaysRes = await fetch('/api/settings/max-late-days', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ maxLateDays: maxLateDays }),
+      });
+
+      const maxDaysData = await maxDaysRes.json();
+
+      if (!maxDaysRes.ok) {
+        toast.error(maxDaysData.error || 'Failed to update max late days');
+        setLoadingTimeLimit(false);
+        return;
+      }
+
+      toast.success('Settings updated successfully');
+      setShowTimeLimitModal(false);
+      setLoadingTimeLimit(false);
+    } catch (err: any) {
+      toast.error(err.message || 'An error occurred');
+      setLoadingTimeLimit(false);
+    }
+  };
+
   useEffect(() => {
     // Fetch immediately
     fetchEmployeesOnLeave();
+    fetchDefaultTimeLimit();
+    fetchMaxLateDays();
 
     // Refresh every 5 seconds to catch status changes quickly
     const interval = setInterval(fetchEmployeesOnLeave, 5000);
@@ -290,7 +434,7 @@ export default function EmployeeManagement({ initialEmployees, canChangeRole = t
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener('leaveStatusChanged', handleLeaveStatusChange);
     };
-  }, []);
+  }, [isHROrAdmin]);
 
   // Pagination logic
   const paginatedEmployees = useMemo(() => {
@@ -306,13 +450,62 @@ export default function EmployeeManagement({ initialEmployees, canChangeRole = t
       <div className="bg-white rounded-lg shadow-sm border border-gray-100">
         <div className="p-4 border-b border-gray-200 flex items-center justify-between">
           <h2 className="text-lg font-primary font-semibold text-gray-800">All Employees</h2>
-          <button
-            onClick={() => handleOpenModal()}
-            className="flex items-center gap-2 px-3 py-1.5 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors text-sm"
-          >
-            <Plus className="w-4 h-4" />
-            <span className="font-secondary">Add Employee</span>
-          </button>
+          <div className="flex items-center gap-2">
+            {isHROrAdmin && (
+              <>
+                <button
+                  onClick={() => {
+                    fetchMaxLateDays();
+                    setShowTimeLimitModal(true);
+                  }}
+                  className="group relative flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-lg hover:from-orange-600 hover:to-red-700 transition-all duration-200 shadow-md hover:shadow-lg text-sm font-medium"
+                  title="Set maximum allowed late arrival days before casual leave deduction"
+                >
+                  <Calendar className="w-3.5 h-3.5" />
+                  <span className="font-secondary">Max Days</span>
+                  {maxLateDays > 0 ? (
+                    <div className="flex items-center gap-1 pl-2 border-l border-white/30">
+                      <span className="font-semibold text-sm">{maxLateDays}</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1 pl-2 border-l border-white/30">
+                      <span className="text-xs opacity-80 font-secondary">Not set</span>
+                    </div>
+                  )}
+                </button>
+                <button
+                  onClick={() => {
+                    fetchDefaultTimeLimit();
+                    fetchMaxLateDays();
+                    setShowTimeLimitModal(true);
+                  }}
+                  className="group relative flex items-center gap-2.5 px-4 py-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg hover:from-indigo-600 hover:to-purple-700 transition-all duration-200 shadow-md hover:shadow-lg text-sm font-medium"
+                  title="Set default clock-in time limit for all employees"
+                >
+                <div className="flex items-center gap-2">
+                  <Clock className="w-3.5 h-3.5" />
+                  <span className="font-secondary">Max Time</span>
+                </div>
+                {defaultTimeLimit ? (
+                  <div className="flex items-center gap-1.5 pl-2.5 border-l border-white/30">
+                    <span className="font-semibold text-sm">{formatTimeString12Hour(defaultTimeLimit)}</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 pl-2.5 border-l border-white/30">
+                    <span className="text-xs opacity-80 font-secondary">Not set</span>
+                  </div>
+                )}
+              </button>
+              </>
+            )}
+            <button
+              onClick={() => handleOpenModal()}
+              className="flex items-center gap-2 px-3 py-1.5 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors text-sm"
+            >
+              <Plus className="w-4 h-4" />
+              <span className="font-secondary">Add Employee</span>
+            </button>
+          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -333,6 +526,9 @@ export default function EmployeeManagement({ initialEmployees, canChangeRole = t
                 </th>
                 <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider font-primary">
                   Weekly Off
+                </th>
+                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider font-primary">
+                  Clockin Time
                 </th>
                 <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider font-primary">
                   Email Status
@@ -406,6 +602,27 @@ export default function EmployeeManagement({ initialEmployees, canChangeRole = t
                     </div>
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
+                    <div className="flex items-center gap-2">
+                      {employee.clockInTime === 'N/R' ? (
+                        <span className="px-2 py-0.5 inline-flex items-center gap-1 text-xs leading-4 font-semibold rounded-full bg-green-100 text-green-800 font-secondary">
+                          N/R
+                        </span>
+                      ) : employee.clockInTime && employee.clockInTime.trim() !== '' ? (
+                        <span className="px-2 py-0.5 inline-flex items-center gap-1 text-xs leading-4 font-semibold rounded-full bg-blue-100 text-blue-800 font-secondary">
+                          <Clock className="w-3 h-3" />
+                          {formatTimeString12Hour(employee.clockInTime)}
+                        </span>
+                      ) : defaultTimeLimit ? (
+                        <span className="px-2 py-0.5 inline-flex items-center gap-1 text-xs leading-4 font-semibold rounded-full bg-gray-100 text-gray-700 font-secondary">
+                          <Clock className="w-3 h-3" />
+                          {formatTimeString12Hour(defaultTimeLimit)} <span className="text-gray-500 text-[10px]">(Default)</span>
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-400 italic font-secondary">Not set</span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
                     <span
                       className={`px-2 py-0.5 inline-flex text-xs leading-4 font-semibold rounded-full font-secondary ${
                         employee.emailVerified
@@ -470,52 +687,52 @@ export default function EmployeeManagement({ initialEmployees, canChangeRole = t
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl p-5 w-full max-w-md border border-white/50"
+            className="bg-white/95 backdrop-blur-xl rounded-xl shadow-2xl p-4 w-full max-w-sm border border-white/50 max-h-[90vh] overflow-y-auto"
           >
-            <h2 className="text-xl font-primary font-bold text-gray-800 mb-4">
+            <h2 className="text-lg font-primary font-bold text-gray-800 mb-3">
               {editingEmployee ? 'Edit Employee' : 'Add Employee'}
             </h2>
 
             {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">
+              <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-xs mb-3">
                 {error}
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-2.5">
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1.5 font-secondary">Name</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1 font-secondary">Name</label>
                 <input
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   required
-                  className="w-full px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-secondary bg-white"
+                  className="w-full px-2.5 py-1.5 text-sm text-gray-700 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-secondary bg-white"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1.5 font-secondary">Email</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1 font-secondary">Email</label>
                 <input
                   type="email"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   required
                   disabled={!!editingEmployee}
-                  className="w-full px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none disabled:bg-gray-100 disabled:text-gray-500 font-secondary bg-white"
+                  className="w-full px-2.5 py-1.5 text-sm text-gray-700 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none disabled:bg-gray-100 disabled:text-gray-500 font-secondary bg-white"
                 />
               </div>
 
               {canChangeRole ? (
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1.5 font-secondary">Role</label>
+                  <label className="block text-xs font-medium text-gray-700 mb-1 font-secondary">Role</label>
                   <select
                     value={formData.role}
                     onChange={(e) =>
                       setFormData({ ...formData, role: e.target.value as any })
                     }
                     required
-                    className="w-full px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-secondary bg-white"
+                    className="w-full px-2.5 py-1.5 text-sm text-gray-700 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-secondary bg-white"
                   >
                     <option value="employee">Employee</option>
                     <option value="hr">HR</option>
@@ -524,32 +741,32 @@ export default function EmployeeManagement({ initialEmployees, canChangeRole = t
                 </div>
               ) : (
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1.5 font-secondary">Role</label>
-                  <div className="w-full px-3 py-2 text-sm text-gray-500 border border-gray-300 rounded-lg bg-gray-100 font-secondary capitalize">
+                  <label className="block text-xs font-medium text-gray-700 mb-1 font-secondary">Role</label>
+                  <div className="w-full px-2.5 py-1.5 text-sm text-gray-500 border border-gray-300 rounded-lg bg-gray-100 font-secondary capitalize">
                     {formData.role}
                   </div>
-                  <p className="mt-1 text-xs text-gray-500 font-secondary">Role cannot be changed</p>
+                  <p className="mt-0.5 text-xs text-gray-500 font-secondary">Role cannot be changed</p>
                 </div>
               )}
 
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1.5 font-secondary">Designation</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1 font-secondary">Designation</label>
                 <input
                   type="text"
                   value={formData.designation}
                   onChange={(e) => setFormData({ ...formData, designation: e.target.value })}
                   placeholder="e.g., Software Engineer, HR Manager, etc."
-                  className="w-full px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-secondary bg-white"
+                  className="w-full px-2.5 py-1.5 text-sm text-gray-700 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-secondary bg-white"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1.5 font-secondary">Weekly Off</label>
-                <div className="grid grid-cols-3 gap-2">
+                <label className="block text-xs font-medium text-gray-700 mb-1 font-secondary">Weekly Off</label>
+                <div className="grid grid-cols-3 gap-1.5">
                   {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day) => (
                     <label
                       key={day}
-                      className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
+                      className="flex items-center gap-1.5 px-2 py-1.5 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
                     >
                       <input
                         type="checkbox"
@@ -561,26 +778,71 @@ export default function EmployeeManagement({ initialEmployees, canChangeRole = t
                             setFormData({ ...formData, weeklyOff: formData.weeklyOff.filter(d => d !== day) });
                           }
                         }}
-                        className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary"
+                        className="w-3.5 h-3.5 text-primary border-gray-300 rounded focus:ring-primary"
                       />
-                      <span className="text-sm text-gray-700 font-secondary">{day}</span>
+                      <span className="text-xs text-gray-700 font-secondary">{day}</span>
                     </label>
                   ))}
                 </div>
               </div>
 
-              <div className="flex gap-2 pt-3">
+              {isHROrAdmin && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1 font-secondary">
+                    Clock-in Time <span className="text-gray-400 text-[10px]">(Optional)</span>
+                  </label>
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={noClockInRestrictions}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setNoClockInRestrictions(checked);
+                          if (checked) {
+                            setFormData({ ...formData, clockInTime: '' });
+                          }
+                        }}
+                        className="w-3.5 h-3.5 text-primary border-gray-300 rounded focus:ring-primary"
+                      />
+                      <span className="text-xs text-gray-700 font-secondary">No restrictions</span>
+                    </label>
+                  </div>
+                  <input
+                    type="time"
+                    value={formData.clockInTime || ''}
+                    onChange={(e) => {
+                      const timeValue = e.target.value;
+                      console.log('[EmployeeManagement] Clock-in time changed to:', timeValue);
+                      setFormData({ ...formData, clockInTime: timeValue });
+                      if (timeValue && timeValue.trim() !== '') {
+                        setNoClockInRestrictions(false);
+                      }
+                    }}
+                    disabled={noClockInRestrictions}
+                    placeholder="09:30"
+                    className="w-full px-2.5 py-1.5 text-sm text-gray-700 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-secondary bg-white disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
+                  />
+                  <p className="mt-0.5 text-[10px] text-gray-500 font-secondary">
+                    {noClockInRestrictions 
+                      ? 'No clock-in time restrictions' 
+                      : 'Leave empty to use default time limit'}
+                  </p>
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-2">
                 <button
                   type="button"
                   onClick={handleCloseModal}
-                  className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors font-secondary"
+                  className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors font-secondary"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={loading}
-                  className="flex-1 px-3 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors disabled:opacity-50 font-secondary flex items-center justify-center gap-2"
+                  className="flex-1 px-3 py-1.5 text-sm bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors disabled:opacity-50 font-secondary flex items-center justify-center gap-2"
                 >
                   {loading ? (
                     <>
@@ -626,6 +888,84 @@ export default function EmployeeManagement({ initialEmployees, canChangeRole = t
         }
         loading={deleting}
       />
+
+      {/* Default Time Limit Modal */}
+      {showTimeLimitModal && (
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl p-5 w-full max-w-md border border-white/50"
+          >
+            <h2 className="text-xl font-primary font-bold text-gray-800 mb-4">
+              Clock-in Settings
+            </h2>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1.5 font-secondary">
+                  Max Late Days
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  value={maxLateDays}
+                  onChange={(e) => setMaxLateDays(parseInt(e.target.value) || 0)}
+                  className="w-full px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-secondary bg-white"
+                  placeholder="0"
+                />
+                <p className="mt-1 text-xs text-gray-500 font-secondary">
+                  Maximum allowed late arrival days before deducting 0.5 casual leave (e.g., 3 days)
+                </p>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1.5 font-secondary">
+                  Time Limit (HH:mm)
+                </label>
+                <input
+                  type="time"
+                  value={defaultTimeLimit}
+                  onChange={(e) => setDefaultTimeLimit(e.target.value)}
+                  className="w-full px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-secondary bg-white"
+                  placeholder="09:30"
+                />
+                <p className="mt-1 text-xs text-gray-500 font-secondary">
+                  Set the default clock-in time limit for all employees (e.g., 09:30)
+                </p>
+              </div>
+
+              <div className="flex gap-2 pt-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowTimeLimitModal(false);
+                    setDefaultTimeLimit('');
+                    setMaxLateDays(0);
+                  }}
+                  className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors font-secondary"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveTimeLimit}
+                  disabled={loadingTimeLimit}
+                  className="flex-1 px-3 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors disabled:opacity-50 font-secondary flex items-center justify-center gap-2"
+                >
+                  {loadingTimeLimit ? (
+                    <>
+                      <LoadingDots size="sm" color="white" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    'Save'
+                  )}
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 }

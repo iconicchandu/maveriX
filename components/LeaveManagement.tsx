@@ -11,26 +11,11 @@ import UserAvatar from './UserAvatar';
 import Pagination from './Pagination';
 import AdvancedFilterBar from './AdvancedFilterBar';
 
-// Helper function to convert 24-hour time to 12-hour format
-const formatTime12Hour = (time24: string): string => {
-  if (!time24) return '';
-  const [hours, minutes] = time24.split(':');
-  const hour = parseInt(hours, 10);
-  const min = minutes || '00';
-  const period = hour >= 12 ? 'PM' : 'AM';
-  const hour12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
-  return `${hour12}:${min} ${period}`;
-};
+import { formatTimeString12Hour, formatTimeRange12Hour } from '@/lib/timeUtils';
 
-// Helper function to format time range from "HH:MM-HH:MM" to "h:mm AM - h:mm PM"
-const formatTimeRange = (timeRange: string): string => {
-  if (!timeRange) return '';
-  if (timeRange.includes('-')) {
-    const [from, to] = timeRange.split('-');
-    return `${formatTime12Hour(from)} - ${formatTime12Hour(to)}`;
-  }
-  return formatTime12Hour(timeRange);
-};
+// Re-export for backward compatibility
+const formatTime12Hour = formatTimeString12Hour;
+const formatTimeRange = formatTimeRange12Hour;
 
 interface Leave {
   _id: string;
@@ -345,6 +330,11 @@ export default function LeaveManagement({
   // Filter and search logic
   const filteredLeaves = useMemo(() => {
     const filtered = leaves.filter((leave) => {
+      // Exclude penalty-related leaves (leaves deducted for late clock-in penalties)
+      if (leave.reason && /penalty|late.*clock.*in|exceeded.*max.*late/i.test(leave.reason)) {
+        return false;
+      }
+
       // Search filter - search in employee name, email, reason
       if (searchTerm) {
         const searchLower = searchTerm.toLowerCase();

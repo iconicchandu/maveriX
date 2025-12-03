@@ -33,43 +33,63 @@ export async function GET(request: NextRequest) {
     }
     // Admin and HR (when requesting all leaves for leave allotment page) can see all leaves
 
-    const leaves = await Leave.find(query)
+    // Exclude penalty-related leaves (leaves deducted for late clock-in penalties)
+    const leavesQuery = {
+      ...query,
+      $or: [
+        { reason: { $exists: false } },
+        { reason: { $not: { $regex: /penalty|late.*clock.*in|exceeded.*max.*late/i } } },
+      ],
+    };
+
+    const leaves = await Leave.find(leavesQuery)
       .populate('userId', 'name email profileImage')
       .populate('allottedBy', 'name email profileImage')
       .populate('leaveType', 'name description')
       .sort({ createdAt: -1 })
       .lean();
 
-    // For allotted leaves, ensure remainingDays is calculated if missing
-    if (role === 'employee' || (role === 'hr' && !allLeaves)) {
-      for (const leave of leaves) {
-        if (leave.allottedBy && (leave.remainingDays === undefined || leave.remainingDays === null)) {
-          // Get the actual ObjectId (handle both populated and non-populated cases)
-          const userId = typeof leave.userId === 'object' && leave.userId?._id 
-            ? leave.userId._id 
-            : leave.userId;
-          const leaveTypeId = typeof leave.leaveType === 'object' && leave.leaveType?._id 
-            ? leave.leaveType._id 
-            : leave.leaveType;
+    // Additional filter to exclude penalty-related leaves
+    const filteredLeaves = leaves.filter((leave: any) => {
+      if (leave.reason && /penalty|late.*clock.*in|exceeded.*max.*late/i.test(leave.reason)) {
+        return false;
+      }
+      return true;
+    });
 
-          // Calculate remaining days based on approved requests
-          const approvedRequests = await Leave.find({
-            userId: new mongoose.Types.ObjectId(userId),
-            leaveType: new mongoose.Types.ObjectId(leaveTypeId),
-            status: 'approved',
-            allottedBy: { $exists: false },
-          }).lean();
+    // For allotted leaves, always recalculate remainingDays to ensure it includes penalty deductions
+    // This applies to all roles to ensure accurate leave balances are displayed
+    for (const leave of filteredLeaves) {
+      if (leave.allottedBy) {
+        // Get the actual ObjectId (handle both populated and non-populated cases)
+        const userId = typeof leave.userId === 'object' && leave.userId?._id 
+          ? leave.userId._id 
+          : leave.userId;
+        const leaveTypeId = typeof leave.leaveType === 'object' && leave.leaveType?._id 
+          ? leave.leaveType._id 
+          : leave.leaveType;
 
-          const totalUsed = approvedRequests.reduce((sum: number, req: any) => sum + (req.days || 0), 0);
-          leave.remainingDays = Math.max(0, (leave.days || 0) - totalUsed);
+        // Calculate remaining days based on approved requests (INCLUDING penalty-related leaves, as they deduct from balance)
+        const approvedRequests = await Leave.find({
+          userId: new mongoose.Types.ObjectId(userId),
+          leaveType: new mongoose.Types.ObjectId(leaveTypeId),
+          status: 'approved',
+          allottedBy: { $exists: false },
+          // Include penalty-related leaves in calculation as they deduct from balance
+        }).lean();
 
-          // Update in database
-          await Leave.findByIdAndUpdate(leave._id, { remainingDays: leave.remainingDays });
-        }
+        const totalUsed = approvedRequests.reduce((sum: number, req: any) => sum + (req.days || 0), 0);
+        const calculatedRemainingDays = Math.max(0, (leave.days || 0) - totalUsed);
+        
+        // Always update remainingDays to ensure it reflects current state including penalties
+        leave.remainingDays = calculatedRemainingDays;
+
+        // Update in database
+        await Leave.findByIdAndUpdate(leave._id, { remainingDays: calculatedRemainingDays });
       }
     }
 
-    return NextResponse.json({ leaves });
+    return NextResponse.json({ leaves: filteredLeaves });
   } catch (error: any) {
     console.error('Get leaves error:', error);
     return NextResponse.json({ error: error.message || 'Server error' }, { status: 500 });

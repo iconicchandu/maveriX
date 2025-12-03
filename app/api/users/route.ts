@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
 
     // Return all non-admin users (employee + hr) for admin/hr roles
     const users = await User.find({ role: { $ne: 'admin' } })
-      .select('_id name email role designation profileImage mobileNumber emailVerified approved weeklyOff createdAt')
+      .select('_id name email role designation profileImage mobileNumber emailVerified approved weeklyOff clockInTime createdAt')
       .lean();
 
     // Debug logging to verify weeklyOff is being returned
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { email, name, role, designation, weeklyOff } = await request.json();
+    const { email, name, role, designation, weeklyOff, clockInTime } = await request.json();
 
     if (!email || !name) {
       return NextResponse.json(
@@ -93,12 +93,33 @@ export async function POST(request: NextRequest) {
       approvedStatus = false; // Employees need admin approval
     }
 
+    // Validate clockInTime if provided (allow "N/R" as special marker)
+    let finalClockInTime = undefined;
+    if (clockInTime && clockInTime.trim() !== '') {
+      const trimmedTime = clockInTime.trim();
+      if (trimmedTime === 'N/R') {
+        // Special marker for "No Restrictions"
+        finalClockInTime = 'N/R';
+      } else {
+        // Validate time format (HH:mm)
+        const timeRegex = /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/;
+        if (!timeRegex.test(trimmedTime)) {
+          return NextResponse.json(
+            { error: 'Invalid clock-in time format. Please use HH:mm format (e.g., 09:30)' },
+            { status: 400 }
+          );
+        }
+        finalClockInTime = trimmedTime;
+      }
+    }
+
     const user = new User({
       email: email.toLowerCase(),
       name,
       role: finalRole,
       designation: designation || undefined,
       weeklyOff: Array.isArray(weeklyOff) ? weeklyOff.filter(day => day && day.trim()) : [],
+      clockInTime: finalClockInTime,
       verificationToken,
       verificationTokenExpiry,
       emailVerified: false,
@@ -119,6 +140,7 @@ export async function POST(request: NextRequest) {
         designation: user.designation,
         emailVerified: user.emailVerified,
         weeklyOff: user.weeklyOff || [],
+        clockInTime: user.clockInTime,
       },
     });
   } catch (error: any) {

@@ -14,7 +14,10 @@ export default async function HREmployeesPage() {
   }
 
   await connectDB();
-  const employees = await User.find({ role: { $ne: 'admin' } }).select('-password').lean();
+  const employees = await User.find({ role: { $ne: 'admin' } })
+    .select('-password')
+    .select('_id name email role designation profileImage emailVerified approved weeklyOff clockInTime createdAt')
+    .lean();
 
   return (
     <DashboardLayout role="hr">

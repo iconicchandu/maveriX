@@ -44,17 +44,30 @@ export async function GET() {
 
     // Get employees on leave today - any approved leave that covers today
     // A leave covers today if: startDate <= endOfToday AND endDate >= today
-    // Only include actual leave requests (exclude allotted leaves)
+    // Only include actual leave requests (exclude allotted leaves and penalty-related leaves)
     const leavesToday = await Leave.find({
       status: 'approved',
       allottedBy: { $exists: false }, // Exclude allotted leaves - only actual leave requests
+      $or: [
+        { reason: { $exists: false } }, // No reason field
+        { reason: null }, // Reason is null
+        { reason: { $not: { $regex: /penalty|late.*clock.*in|exceeded.*max.*late|auto.*deduct/i } } } // Reason doesn't match penalty pattern
+      ],
       startDate: { $lte: endOfToday }, // Leave starts on or before end of today
       endDate: { $gte: today }, // Leave ends on or after start of today
-    }).select('userId').lean();
+    }).select('userId reason').lean();
+    
+    // Additional client-side filter to ensure penalty leaves are excluded
+    const filteredLeaves = leavesToday.filter((leave: any) => {
+      if (leave.reason && /penalty|late.*clock.*in|exceeded.*max.*late|auto.*deduct/i.test(leave.reason)) {
+        return false;
+      }
+      return true;
+    });
 
     // Get distinct user IDs who are on leave today
     const userIdsOnLeave = new Set(
-      leavesToday.map((leave: any) => {
+      filteredLeaves.map((leave: any) => {
         const userId = typeof leave.userId === 'object' && leave.userId?._id 
           ? leave.userId._id.toString() 
           : leave.userId.toString();

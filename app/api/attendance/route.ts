@@ -3,6 +3,8 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import connectDB from '@/lib/mongodb';
 import Attendance from '@/models/Attendance';
+import User from '@/models/User';
+import { checkAndCreatePenalty } from '@/lib/penaltyUtils';
 
 export const dynamic = 'force-dynamic';
 
@@ -85,15 +87,31 @@ export async function POST(request: NextRequest) {
 
     if (action === 'clockIn') {
       try {
+        const clockInTime = new Date();
+        
         // Allow multiple clock ins - always create a new record
         const attendance = new Attendance({
           userId,
           date: today,
-          clockIn: new Date(),
+          clockIn: clockInTime,
           status: 'present',
         });
 
         await attendance.save();
+
+        // Check if user clocked in late and create penalty if exceeded max days
+        // Use the shared penalty utility to handle all checks and penalty creation
+        try {
+          const penaltyResult = await checkAndCreatePenalty(userId, clockInTime);
+          if (penaltyResult.shouldCreatePenalty) {
+            console.log(`[Attendance] Penalty created for user ${userId}: ${penaltyResult.message}`);
+          } else {
+            console.log(`[Attendance] No penalty needed: ${penaltyResult.message}`);
+          }
+        } catch (penaltyError: any) {
+          // Log error but don't fail the clock-in
+          console.error('Error processing penalty:', penaltyError);
+        }
 
         return NextResponse.json({
           message: 'Clocked in successfully',

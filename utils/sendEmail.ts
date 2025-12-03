@@ -10,11 +10,6 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-/**
- * Gets the formatted "from" email address with optional display name
- * Reads FROM_NAME and FROM_EMAIL from environment variables
- * @returns Formatted email string like "Display Name <email@example.com>" or just "email@example.com"
- */
 // Helper function to convert 24-hour time to 12-hour format
 function formatTime12Hour(time24: string): string {
   if (!time24) return '';
@@ -36,15 +31,24 @@ function formatTimeRange(timeRange: string): string {
   return formatTime12Hour(timeRange);
 }
 
+/**
+ * Gets the formatted "from" email address with display name
+ * Always uses "MaveriX" as the display name
+ * @returns Formatted email string like "MaveriX <email@example.com>" or just "email@example.com"
+ */
 function getFromEmail(): string {
-  const fromEmail = process.env.FROM_EMAIL || '';
-  const fromName = process.env.FROM_NAME;
+  // Always use "MaveriX" as the display name (hardcoded, ignoring any environment variables)
+  const fromEmail: string = process.env.FROM_EMAIL || process.env.SMTP_USER || '';
+  const displayName = 'MaveriX';
 
-  if (fromName && fromName.trim()) {
-    return `${fromName.trim()} <${fromEmail}>`;
+  if (fromEmail) {
+    const formattedEmail = `${displayName} <${fromEmail}>`;
+    console.log('[Email] Using sender:', formattedEmail);
+    return formattedEmail;
   }
 
-  return fromEmail;
+  console.log('[Email] No FROM_EMAIL or SMTP_USER configured, using empty string');
+  return '';
 }
 
 export async function sendVerificationEmail(email: string, token: string, name?: string) {

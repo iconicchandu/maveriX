@@ -19,6 +19,7 @@ export interface IUser extends Document {
   accountNumber?: string;
   ifscCode?: string;
   weeklyOff?: string[]; // Array of day names like ['Sunday', 'Monday']
+  clockInTime?: string; // Individual clock-in time limit (HH:mm format, e.g., "09:30")
   createdAt: Date;
   updatedAt: Date;
 }
@@ -102,6 +103,31 @@ const UserSchema: Schema = new Schema(
           return v.every(day => validDays.includes(day));
         },
         message: 'Weekly off must be valid day names',
+      },
+    },
+    clockInTime: {
+      type: String,
+      validate: {
+        validator: function(v: any) {
+          // Allow undefined, null, or empty string (optional field)
+          if (v === undefined || v === null || v === '') {
+            return true;
+          }
+          // Convert to string and trim to handle any edge cases
+          const value = String(v).trim();
+          // Allow "N/R" as special marker for no restrictions (case-insensitive check)
+          if (value === 'N/R' || value.toUpperCase() === 'N/R') {
+            return true;
+          }
+          // Validate HH:mm format
+          const timeRegex = /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/;
+          const isValid = timeRegex.test(value);
+          if (!isValid) {
+            console.log('[User Model] Validation failed for clockInTime:', value, 'Type:', typeof v);
+          }
+          return isValid;
+        },
+        message: 'Clock-in time must be in HH:mm format (e.g., 09:30) or "N/R" for no restrictions',
       },
     },
   },

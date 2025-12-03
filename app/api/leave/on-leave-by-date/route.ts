@@ -36,19 +36,29 @@ export async function GET(request: NextRequest) {
 
     // Find all approved leave requests that include the selected date
     // A leave includes the date if: startDate <= date AND endDate >= date
-    // Only include leaves with status exactly 'approved' and exclude allotted leaves
+    // Only include leaves with status exactly 'approved' and exclude allotted leaves and penalty leaves
     const leavesOnDate = await Leave.find({
       status: 'approved',
       allottedBy: { $exists: false }, // Exclude allotted leaves - only actual leave requests
       startDate: { $lte: endOfDate },
       endDate: { $gte: selectedDate },
+      reason: { $not: { $regex: /penalty|clock.*in.*late|exceeded.*max.*late|auto.*deduct/i } }, // Exclude penalty-related leaves
     })
-      .select('userId startDate endDate')
+      .select('userId startDate endDate reason')
       .lean();
 
-    // Extract unique user IDs from approved leaves
+    // Filter out any penalty leaves that might have passed the regex check
+    const approvedLeavesOnly = leavesOnDate.filter((leave: any) => {
+      // Exclude penalty-related leaves
+      if (leave.reason && /penalty|clock.*in.*late|exceeded.*max.*late|auto.*deduct/i.test(leave.reason)) {
+        return false;
+      }
+      return true;
+    });
+
+    // Extract unique user IDs from approved leaves (excluding penalties)
     const userIdsOnLeave = Array.from(
-      new Set(leavesOnDate.map((leave: any) => leave.userId.toString()))
+      new Set(approvedLeavesOnly.map((leave: any) => leave.userId.toString()))
     );
 
     return NextResponse.json({ 

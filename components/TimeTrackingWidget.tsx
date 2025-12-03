@@ -298,6 +298,14 @@ export default function TimeTrackingWidget() {
     return format(d, 'hh:mm a');
   };
 
+  const formatTimeDisplay = (date: Date) => {
+    const hours12 = format(date, 'hh');
+    const minutes = format(date, 'mm');
+    const seconds = format(date, 'ss');
+    const period = format(date, 'a');
+    return { hours: hours12, minutes, seconds, period };
+  };
+
   const formatDuration = (hours?: number) => {
     if (!hours) return '00:00:00';
     const h = Math.floor(hours);
@@ -438,8 +446,7 @@ export default function TimeTrackingWidget() {
               <div className="flex items-center justify-center gap-2">
                 {mounted && currentTime ? (
                   (() => {
-                    const timeStr = format(currentTime, 'hh:mm:ss');
-                    const [hours, minutes, seconds] = timeStr.split(':');
+                    const { hours, minutes, seconds, period } = formatTimeDisplay(currentTime);
                     return (
                       <>
                         <span className="text-4xl md:text-5xl font-primary font-bold text-primary bg-primary-100 px-3 py-2 rounded-md shadow-sm">
@@ -452,6 +459,9 @@ export default function TimeTrackingWidget() {
                         <span className="text-4xl md:text-5xl font-primary font-bold text-gray-900">:</span>
                         <span className="text-4xl md:text-5xl font-primary font-bold text-primary bg-primary-100 px-3 py-2 rounded-md shadow-sm">
                           {seconds}
+                        </span>
+                        <span className="text-2xl md:text-3xl font-primary font-bold text-primary ml-2">
+                          {period}
                         </span>
                       </>
                     );
@@ -743,8 +753,7 @@ export default function TimeTrackingWidget() {
                   <div className="flex items-center justify-center gap-2">
                     {mounted && currentTime ? (
                       (() => {
-                        const timeStr = format(currentTime, 'hh:mm:ss');
-                        const [hours, minutes, seconds] = timeStr.split(':');
+                        const { hours, minutes, seconds, period } = formatTimeDisplay(currentTime);
                         return (
                           <>
                             <span className="text-4xl md:text-5xl font-primary font-bold text-primary bg-primary-100 px-3 py-2 rounded-md shadow-sm">
@@ -757,6 +766,9 @@ export default function TimeTrackingWidget() {
                             <span className="text-4xl md:text-5xl font-primary font-bold text-gray-900">:</span>
                             <span className="text-4xl md:text-5xl font-primary font-bold text-primary bg-primary-100 px-3 py-2 rounded-md shadow-sm">
                               {seconds}
+                            </span>
+                            <span className="text-2xl md:text-3xl font-primary font-bold text-primary ml-2">
+                              {period}
                             </span>
                           </>
                         );

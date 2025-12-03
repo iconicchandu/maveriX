@@ -107,23 +107,23 @@ export default function PWAInstallPrompt() {
           exit={{ opacity: 0, x: 20, y: -20 }}
           className="fixed top-4 right-4 z-[9999] w-[calc(100%-2rem)] max-w-sm sm:max-w-md"
         >
-          <div className="bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden">
+          <div className="bg-white/30 backdrop-blur-xl rounded-xl shadow-2xl border border-gray-200 overflow-hidden">
             <div className="p-3 sm:p-4 flex items-center gap-3 sm:gap-4">
               {/* Logo */}
               <div className="flex-shrink-0">
                 <img
                   src="/assets/mobileicon.jpg"
                   alt="MaveriX"
-                  className="w-12 h-12 sm:w-14 sm:h-14 rounded-lg object-cover"
+                  className="w-12 h-12 sm:w-8 sm:h-8 rounded-lg object-cover"
                 />
               </div>
 
               {/* Content */}
               <div className="flex-1 min-w-0">
-                <h3 className="text-sm sm:text-base font-bold text-gray-900 mb-1">
+                <h3 className="text-sm font-bold text-gray-900 mb-1">
                   {isIOS ? 'Install MaveriX' : 'Install App'}
                 </h3>
-                <p className="text-xs sm:text-sm text-gray-600 leading-tight">
+                <p className="text-xs sm:text-xs text-gray-600 leading-tight">
                   {isIOS 
                     ? 'Add to home screen for quick access'
                     : 'Get faster access and offline support'
