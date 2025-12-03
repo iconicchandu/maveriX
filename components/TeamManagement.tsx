@@ -24,7 +24,8 @@ interface Team {
     _id: string;
     name: string;
     email: string;
-  };
+    profileImage?: string;
+  } | null;
   members: Array<{
     _id: string;
     name: string;
@@ -103,9 +104,9 @@ export default function TeamManagement() {
       setFormData({
         name: team.name,
         description: team.description || '',
-        leader: team.leader._id,
+        leader: team.leader?._id || '',
         members: team.members
-          .filter((member) => member._id !== team.leader._id)
+          .filter((member) => team.leader && member._id !== team.leader._id)
           .map((member) => member._id),
       });
     } else {
@@ -242,12 +243,12 @@ export default function TeamManagement() {
     if (editingTeam) {
       // When editing, check other teams (not current team)
       const team = teams.find(
-        (t) => t._id !== editingTeam._id && t.leader._id === employeeId
+        (t) => t._id !== editingTeam._id && t.leader && t.leader._id === employeeId
       );
       return team;
     } else {
       // When creating, check all teams
-      const team = teams.find((t) => t.leader._id === employeeId);
+      const team = teams.find((t) => t.leader && t.leader._id === employeeId);
       return team;
     }
   };
@@ -299,8 +300,8 @@ export default function TeamManagement() {
   const filteredTeams = useMemo(() => {
     return teams.filter((team) =>
       team.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      team.leader.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      team.description?.toLowerCase().includes(searchTerm.toLowerCase())
+      (team.leader?.name && team.leader.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (team.description && team.description.toLowerCase().includes(searchTerm.toLowerCase()))
     );
   }, [teams, searchTerm]);
 
@@ -404,11 +405,11 @@ export default function TeamManagement() {
                   <span className="font-medium text-gray-700 font-secondary">Leader:</span>
                   <div className="flex items-center gap-2">
                     <UserAvatar
-                      name={team.leader.name}
-                      image={(team.leader as any)?.profileImage}
+                      name={team.leader?.name || 'No Leader'}
+                      image={team.leader?.profileImage || null}
                       size="sm"
                     />
-                    <span className="text-gray-900 font-secondary">{team.leader.name}</span>
+                    <span className="text-gray-900 font-secondary">{team.leader?.name || 'No Leader'}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 text-sm">
@@ -429,13 +430,13 @@ export default function TeamManagement() {
                       <span
                         key={member._id}
                         className={`text-xs px-2 py-1 rounded-full font-secondary ${
-                          member._id === team.leader._id
+                          team.leader && member._id === team.leader._id
                             ? 'bg-primary-100 text-primary font-semibold'
                             : 'bg-gray-100 text-gray-700'
                         }`}
                       >
                         {member.name}
-                        {member._id === team.leader._id && ' (Leader)'}
+                        {team.leader && member._id === team.leader._id && ' (Leader)'}
                       </span>
                     ))}
                     {team.members.length > 5 && (
@@ -795,7 +796,7 @@ export default function TeamManagement() {
                 </div>
               )}
               <div>
-                <span className="font-semibold">Leader:</span> {deleteModal.team.leader.name}
+                <span className="font-semibold">Leader:</span> {deleteModal.team.leader?.name || 'No Leader'}
               </div>
               <div>
                 <span className="font-semibold">Members:</span> {deleteModal.team.members.length}

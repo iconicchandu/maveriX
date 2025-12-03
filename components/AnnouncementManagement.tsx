@@ -279,12 +279,12 @@ export default function AnnouncementManagement() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="p-3 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg">
-            <Megaphone className="w-6 h-6 text-white" />
+          <div className="p-2 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg">
+            <Megaphone className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h2 className="text-2xl font-primary font-bold text-gray-800">Announcements</h2>
-            <p className="text-sm text-gray-600 font-secondary">Manage and create announcements for employees</p>
+            <h2 className="text-xl font-primary font-bold text-gray-800">Announcements</h2>
+            <p className="text-xs text-gray-600 font-secondary">Manage and create announcements for employees</p>
           </div>
         </div>
         <motion.button
@@ -306,7 +306,7 @@ export default function AnnouncementManagement() {
           className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg shadow-lg hover:shadow-xl transition-shadow font-secondary font-semibold"
         >
           <Plus className="w-5 h-5" />
-          Create Announcement
+          <span className="hidden md:block font-secondary">Create Announcement</span>
         </motion.button>
       </div>
 
