@@ -56,7 +56,13 @@ export default function LeaveManagementTabs({ initialLeaves, role }: LeaveManage
   const [showTypeModal, setShowTypeModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
-  const [selectedLeaveTypes, setSelectedLeaveTypes] = useState<{ leaveTypeId: string; leaveTypeName: string; days: string }[]>([]);
+  const [selectedLeaveTypes, setSelectedLeaveTypes] = useState<{ 
+    leaveTypeId: string; 
+    leaveTypeName: string; 
+    days: string;
+    hours?: string;
+    minutes?: string;
+  }[]>([]);
   const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
   const [showLeaveTypeDropdown, setShowLeaveTypeDropdown] = useState(false);
   const [searchEmployee, setSearchEmployee] = useState('');
@@ -82,8 +88,9 @@ export default function LeaveManagementTabs({ initialLeaves, role }: LeaveManage
     try {
       // For admin and HR, fetch all leaves (including allotted leaves) using ?all=true
       // This ensures the "Allot Leave" tab shows all allotted leaves
-      const url = role === 'admin' || role === 'hr' ? '/api/leave?all=true' : '/api/leave';
-      const res = await fetch(url);
+      const timestamp = Date.now();
+      const url = role === 'admin' || role === 'hr' ? `/api/leave?all=true&t=${timestamp}` : `/api/leave?t=${timestamp}`;
+      const res = await fetch(url, { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } });
       const data = await res.json();
       setLeaves(data.leaves || []);
     } catch (err) {
@@ -93,7 +100,7 @@ export default function LeaveManagementTabs({ initialLeaves, role }: LeaveManage
 
   const fetchLeaveTypes = useCallback(async () => {
     try {
-      const res = await fetch('/api/leave-types');
+      const res = await fetch(`/api/leave-types?t=${Date.now()}`, { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } });
       const data = await res.json();
       setLeaveTypes(data.leaveTypes || []);
     } catch (err) {
@@ -103,7 +110,7 @@ export default function LeaveManagementTabs({ initialLeaves, role }: LeaveManage
 
   const fetchEmployees = useCallback(async () => {
     try {
-      const res = await fetch('/api/users');
+      const res = await fetch(`/api/users?t=${Date.now()}`, { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } });
       const data = await res.json();
       const currentUserId = (session?.user as any)?.id;
       // Include both employees and HR users (exclude only admin)
@@ -124,6 +131,29 @@ export default function LeaveManagementTabs({ initialLeaves, role }: LeaveManage
     fetchLeaveTypes();
     fetchEmployees();
     fetchLeaves();
+
+    // Refetch when page becomes visible (user navigates back)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchLeaves();
+        fetchLeaveTypes();
+        fetchEmployees();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Refetch when window gains focus
+    const handleFocus = () => {
+      fetchLeaves();
+      fetchLeaveTypes();
+      fetchEmployees();
+    };
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
   }, [session, fetchLeaveTypes, fetchEmployees, fetchLeaves]);
 
   // Close dropdowns when clicking outside
@@ -162,16 +192,41 @@ export default function LeaveManagementTabs({ initialLeaves, role }: LeaveManage
     if (isSelected) {
       setSelectedLeaveTypes((prev) => prev.filter((lt) => lt.leaveTypeId !== leaveType._id));
     } else {
-      setSelectedLeaveTypes((prev) => [
-        ...prev,
-        { leaveTypeId: leaveType._id, leaveTypeName: leaveType.name, days: '' },
-      ]);
+      // Check if this is a shortday leave type
+      const leaveTypeName = leaveType.name?.toLowerCase() || '';
+      const isShortDayLeaveType = leaveTypeName.includes('shortday') || 
+                                   leaveTypeName.includes('short-day') || 
+                                   leaveTypeName.includes('short day');
+      
+      if (isShortDayLeaveType) {
+        setSelectedLeaveTypes((prev) => [
+          ...prev,
+          { leaveTypeId: leaveType._id, leaveTypeName: leaveType.name, days: '', hours: '', minutes: '' },
+        ]);
+      } else {
+        setSelectedLeaveTypes((prev) => [
+          ...prev,
+          { leaveTypeId: leaveType._id, leaveTypeName: leaveType.name, days: '' },
+        ]);
+      }
     }
   };
 
   const updateLeaveTypeDays = (leaveTypeId: string, days: string) => {
     setSelectedLeaveTypes((prev) =>
       prev.map((lt) => (lt.leaveTypeId === leaveTypeId ? { ...lt, days } : lt))
+    );
+  };
+
+  const updateLeaveTypeHours = (leaveTypeId: string, hours: string) => {
+    setSelectedLeaveTypes((prev) =>
+      prev.map((lt) => (lt.leaveTypeId === leaveTypeId ? { ...lt, hours } : lt))
+    );
+  };
+
+  const updateLeaveTypeMinutes = (leaveTypeId: string, minutes: string) => {
+    setSelectedLeaveTypes((prev) =>
+      prev.map((lt) => (lt.leaveTypeId === leaveTypeId ? { ...lt, minutes } : lt))
     );
   };
 
@@ -203,11 +258,28 @@ export default function LeaveManagementTabs({ initialLeaves, role }: LeaveManage
     setSelectedEmployees([employeeId]);
     
     // Map employee leaves to selected leave types format
-    const preSelectedLeaveTypes = employeeLeaves.map((leave) => ({
-      leaveTypeId: typeof leave.leaveType === 'object' ? leave.leaveType._id : leave.leaveType,
-      leaveTypeName: typeof leave.leaveType === 'object' ? leave.leaveType.name : leave.leaveType,
-      days: leave.days?.toString() || '',
-    }));
+    const preSelectedLeaveTypes = employeeLeaves.map((leave) => {
+      const leaveTypeName = typeof leave.leaveType === 'object' ? leave.leaveType?.name?.toLowerCase() || '' : '';
+      const isShortDayLeaveType = leaveTypeName.includes('shortday') || 
+                                   leaveTypeName.includes('short-day') || 
+                                   leaveTypeName.includes('short day');
+      
+      if (isShortDayLeaveType && (leave as any).hours !== undefined) {
+        return {
+          leaveTypeId: typeof leave.leaveType === 'object' ? leave.leaveType._id : leave.leaveType,
+          leaveTypeName: typeof leave.leaveType === 'object' ? leave.leaveType.name : leave.leaveType,
+          days: '',
+          hours: ((leave as any).hours || 0).toString(),
+          minutes: ((leave as any).minutes || 0).toString(),
+        };
+      } else {
+        return {
+          leaveTypeId: typeof leave.leaveType === 'object' ? leave.leaveType._id : leave.leaveType,
+          leaveTypeName: typeof leave.leaveType === 'object' ? leave.leaveType.name : leave.leaveType,
+          days: leave.days?.toString() || '',
+        };
+      }
+    });
     
     setSelectedLeaveTypes(preSelectedLeaveTypes);
     setShowAllotModal(true);
@@ -226,10 +298,36 @@ export default function LeaveManagementTabs({ initialLeaves, role }: LeaveManage
       return;
     }
 
-    // Validate all leave types have days entered
-    const invalidLeaveTypes = selectedLeaveTypes.filter((lt) => !lt.days || parseInt(lt.days) <= 0);
+    // Validate all leave types have required fields entered
+    const invalidLeaveTypes = selectedLeaveTypes.filter((lt) => {
+      const leaveTypeName = lt.leaveTypeName?.toLowerCase() || '';
+      const isShortDayLeaveType = leaveTypeName.includes('shortday') || 
+                                   leaveTypeName.includes('short-day') || 
+                                   leaveTypeName.includes('short day');
+      
+      if (isShortDayLeaveType) {
+        // For shortday leave types, check hours/minutes
+        const hoursStr = lt.hours?.trim() || '';
+        const minutesStr = lt.minutes?.trim() || '';
+        const hours = hoursStr !== '' ? parseInt(hoursStr) : 0;
+        const minutes = minutesStr !== '' ? parseInt(minutesStr) : 0;
+        
+        // Check if both are 0 or if parsing failed
+        if (isNaN(hours) && isNaN(minutes)) {
+          return true; // Invalid - both are NaN
+        }
+        return hours === 0 && minutes === 0; // Invalid - both are 0
+      } else {
+        // For regular leave types, check days
+        const daysStr = lt.days?.trim() || '';
+        if (!daysStr) return true; // Invalid - empty
+        const days = parseInt(daysStr);
+        return isNaN(days) || days <= 0; // Invalid - NaN or <= 0
+      }
+    });
+    
     if (invalidLeaveTypes.length > 0) {
-      toast.error('Please enter valid days for all selected leave types');
+      toast.error('Please enter valid values for all selected leave types (days for regular leaves, hours/minutes for shortday leaves)');
       return;
     }
 
@@ -246,16 +344,49 @@ export default function LeaveManagementTabs({ initialLeaves, role }: LeaveManage
 
       // Create allocations for all combinations
       const allocations: any[] = [];
-      selectedEmployees.forEach((userId) => {
-        selectedLeaveTypes.forEach((lt) => {
-          allocations.push({
-            userId,
-            leaveType: lt.leaveTypeId,
-            days: parseInt(lt.days),
-            reason: `Allotted by ${role === 'admin' ? 'Admin' : 'HR'}`,
-          });
-        });
-      });
+      for (const userId of selectedEmployees) {
+        for (const lt of selectedLeaveTypes) {
+          const leaveTypeName = lt.leaveTypeName?.toLowerCase() || '';
+          const isShortDayLeaveType = leaveTypeName.includes('shortday') || 
+                                       leaveTypeName.includes('short-day') || 
+                                       leaveTypeName.includes('short day');
+          
+          if (isShortDayLeaveType) {
+            // For shortday leave types, send hours and minutes
+            const hoursStr = lt.hours?.trim() || '';
+            const minutesStr = lt.minutes?.trim() || '';
+            const hoursValue = hoursStr !== '' ? parseInt(hoursStr) : 0;
+            const minutesValue = minutesStr !== '' ? parseInt(minutesStr) : 0;
+            
+            // Ensure at least one is greater than 0 (validation should have caught this, but double-check)
+            if (isNaN(hoursValue) && isNaN(minutesValue)) {
+              console.error('Invalid shortday leave: both hours and minutes are NaN', lt);
+              continue; // Skip this allocation
+            }
+            
+            if (hoursValue === 0 && minutesValue === 0) {
+              console.error('Invalid shortday leave: both hours and minutes are 0', lt);
+              continue; // Skip this allocation
+            }
+            
+            allocations.push({
+              userId,
+              leaveType: lt.leaveTypeId,
+              hours: isNaN(hoursValue) ? 0 : hoursValue,
+              minutes: isNaN(minutesValue) ? 0 : minutesValue,
+              reason: `Allotted by ${role === 'admin' ? 'Admin' : 'HR'}`,
+            });
+          } else {
+            // For regular leave types, send days
+            allocations.push({
+              userId,
+              leaveType: lt.leaveTypeId,
+              days: parseInt(lt.days),
+              reason: `Allotted by ${role === 'admin' ? 'Admin' : 'HR'}`,
+            });
+          }
+        }
+      }
 
       const res = await fetch('/api/leave/allot/bulk', {
         method: 'POST',
@@ -686,45 +817,77 @@ export default function LeaveManagementTabs({ initialLeaves, role }: LeaveManage
                 </div>
               </div>
 
-              {/* Selected Leave Types with Days Input */}
+              {/* Selected Leave Types with Days/Hours Input */}
               {selectedLeaveTypes.length > 0 && (
                 <div className="space-y-3">
                   <label className="block text-sm font-medium text-gray-700 font-secondary">
-                    Enter Days for Each Leave Type <span className="text-red-500">*</span>
+                    Enter Values for Each Leave Type <span className="text-red-500">*</span>
                 </label>
                   <div className="space-y-2 max-h-60 overflow-y-auto">
-                    {selectedLeaveTypes.map((lt) => (
-                      <motion.div
-                        key={lt.leaveTypeId}
-                        initial={{ opacity: 0, y: -10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200"
-                      >
-                        <div className="flex-1">
-                          <span className="text-sm font-medium text-gray-800 font-primary">
-                            {lt.leaveTypeName}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="number"
-                            min="1"
-                            value={lt.days}
-                            onChange={(e) => updateLeaveTypeDays(lt.leaveTypeId, e.target.value)}
-                            placeholder="Days"
-                            required
-                            className="w-24 px-2.5 py-1.5 text-sm text-gray-700 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-secondary bg-white"
-                />
-                          <button
-                            type="button"
-                            onClick={() => removeLeaveType(lt.leaveTypeId)}
-                            className="text-red-500 hover:text-red-700 transition-colors"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </motion.div>
-                    ))}
+                    {selectedLeaveTypes.map((lt) => {
+                      const leaveTypeName = lt.leaveTypeName?.toLowerCase() || '';
+                      const isShortDayLeaveType = leaveTypeName.includes('shortday') || 
+                                                   leaveTypeName.includes('short-day') || 
+                                                   leaveTypeName.includes('short day');
+                      
+                      return (
+                        <motion.div
+                          key={lt.leaveTypeId}
+                          initial={{ opacity: 0, y: -10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200"
+                        >
+                          <div className="flex-1">
+                            <span className="text-sm font-medium text-gray-800 font-primary">
+                              {lt.leaveTypeName}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {isShortDayLeaveType ? (
+                              <>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={lt.hours || ''}
+                                  onChange={(e) => updateLeaveTypeHours(lt.leaveTypeId, e.target.value)}
+                                  placeholder="Hours"
+                                  required
+                                  className="w-20 px-2.5 py-1.5 text-sm text-gray-700 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-secondary bg-white"
+                                />
+                                <span className="text-sm text-gray-600">h</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="59"
+                                  value={lt.minutes || ''}
+                                  onChange={(e) => updateLeaveTypeMinutes(lt.leaveTypeId, e.target.value)}
+                                  placeholder="Mins"
+                                  className="w-20 px-2.5 py-1.5 text-sm text-gray-700 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-secondary bg-white"
+                                />
+                                <span className="text-sm text-gray-600">m</span>
+                              </>
+                            ) : (
+                              <input
+                                type="number"
+                                min="1"
+                                value={lt.days}
+                                onChange={(e) => updateLeaveTypeDays(lt.leaveTypeId, e.target.value)}
+                                placeholder="Days"
+                                required
+                                className="w-24 px-2.5 py-1.5 text-sm text-gray-700 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-secondary bg-white"
+                              />
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => removeLeaveType(lt.leaveTypeId)}
+                              className="text-red-500 hover:text-red-700 transition-colors"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </motion.div>
+                      );
+                    })}
                   </div>
               </div>
               )}

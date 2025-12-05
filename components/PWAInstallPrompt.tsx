@@ -9,6 +9,38 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 }
 
+// Safe localStorage helper to prevent iOS errors
+const safeLocalStorage = {
+  getItem: (key: string): string | null => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        return window.localStorage.getItem(key);
+      }
+    } catch (error) {
+      console.warn('[PWA] localStorage.getItem failed:', error);
+    }
+    return null;
+  },
+  setItem: (key: string, value: string): void => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem(key, value);
+      }
+    } catch (error) {
+      console.warn('[PWA] localStorage.setItem failed:', error);
+    }
+  },
+  removeItem: (key: string): void => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.removeItem(key);
+      }
+    } catch (error) {
+      console.warn('[PWA] localStorage.removeItem failed:', error);
+    }
+  },
+};
+
 export default function PWAInstallPrompt() {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showPrompt, setShowPrompt] = useState(false);
@@ -17,36 +49,41 @@ export default function PWAInstallPrompt() {
   const [isStandalone, setIsStandalone] = useState(false);
 
   useEffect(() => {
-    // Check if app is already installed (standalone mode)
-    const isStandaloneMode = window.matchMedia('(display-mode: standalone)').matches;
-    if (isStandaloneMode) {
-      setIsStandalone(true);
-      return;
-    }
+    try {
+      // Check if app is already installed (standalone mode)
+      const isStandaloneMode = window.matchMedia('(display-mode: standalone)').matches;
+      if (isStandaloneMode) {
+        setIsStandalone(true);
+        return;
+      }
 
-    // Check if running on iOS
-    const iOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-    setIsIOS(iOS);
+      // Check if running on iOS
+      const iOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+      setIsIOS(iOS);
 
-    // Check if app is already installed (iOS)
-    if (iOS && (window.navigator as any).standalone) {
-      setIsInstalled(true);
-      return;
-    }
+      // Check if app is already installed (iOS)
+      if (iOS && (window.navigator as any).standalone) {
+        setIsInstalled(true);
+        return;
+      }
 
-    // Check if user has dismissed the prompt before (localStorage)
-    const dismissed = localStorage.getItem('pwa-install-dismissed');
-    const dismissedTime = dismissed ? parseInt(dismissed, 10) : 0;
-    const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000; // 7 days
+      // Check if user has dismissed the prompt before (localStorage)
+      const dismissed = safeLocalStorage.getItem('pwa-install-dismissed');
+      const dismissedTime = dismissed ? parseInt(dismissed, 10) : 0;
+      const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000; // 7 days
 
-    // Show prompt if not dismissed or dismissed more than a week ago
-    if (!dismissed || dismissedTime < oneWeekAgo) {
-      // Delay showing prompt by 3 seconds after page load
-      const timer = setTimeout(() => {
-        setShowPrompt(true);
-      }, 3000);
+      // Show prompt if not dismissed or dismissed more than a week ago
+      if (!dismissed || dismissedTime < oneWeekAgo) {
+        // Delay showing prompt by 3 seconds after page load
+        const timer = setTimeout(() => {
+          setShowPrompt(true);
+        }, 3000);
 
-      return () => clearTimeout(timer);
+        return () => clearTimeout(timer);
+      }
+    } catch (error) {
+      console.warn('[PWA] Error in PWAInstallPrompt useEffect:', error);
+      // If there's an error, don't show the prompt
     }
   }, []);
 
@@ -61,14 +98,16 @@ export default function PWAInstallPrompt() {
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
 
     // Check if app is installed
-    window.addEventListener('appinstalled', () => {
+    const handleAppInstalled = () => {
       setIsInstalled(true);
       setShowPrompt(false);
-      localStorage.removeItem('pwa-install-dismissed');
-    });
+      safeLocalStorage.removeItem('pwa-install-dismissed');
+    };
+    window.addEventListener('appinstalled', handleAppInstalled);
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleAppInstalled);
     };
   }, []);
 
@@ -90,7 +129,7 @@ export default function PWAInstallPrompt() {
   const handleDismiss = () => {
     setShowPrompt(false);
     // Remember dismissal for 7 days
-    localStorage.setItem('pwa-install-dismissed', Date.now().toString());
+    safeLocalStorage.setItem('pwa-install-dismissed', Date.now().toString());
   };
 
   // Don't show if already installed or in standalone mode

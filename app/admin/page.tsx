@@ -13,6 +13,8 @@ import RecentActivity from '@/components/RecentActivity';
 import AnnouncementManagement from '@/components/AnnouncementManagement';
 import PendingEmployees from '@/components/PendingEmployees';
 import NotClockedInModal from '@/components/NotClockedInModal';
+import EmployeeSearch from '@/components/EmployeeSearch';
+import UpcomingBirthdays from '@/components/UpcomingBirthdays';
 
 interface RecentTeam {
   _id: string;
@@ -113,14 +115,39 @@ export default function AdminDashboard() {
         fetchRecentTeams();
       }, 5000);
 
-      return () => clearInterval(interval);
+      // Refetch when page becomes visible (user navigates back)
+      const handleVisibilityChange = () => {
+        if (document.visibilityState === 'visible') {
+          fetchStats();
+          fetchRecentTeams();
+        }
+      };
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+
+      // Refetch when window gains focus
+      const handleFocus = () => {
+        fetchStats();
+        fetchRecentTeams();
+      };
+      window.addEventListener('focus', handleFocus);
+
+      return () => {
+        clearInterval(interval);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+        window.removeEventListener('focus', handleFocus);
+      };
     }
   }, [session, status]);
 
   const fetchStats = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/admin/stats');
+      const res = await fetch(`/api/admin/stats?t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache',
+        },
+      });
       const data = await res.json();
       setStats({
         totalEmployees: data.totalEmployees || 0,
@@ -141,7 +168,12 @@ export default function AdminDashboard() {
   const fetchRecentTeams = async () => {
     try {
       setTeamsLoading(true);
-      const res = await fetch('/api/teams/recent');
+      const res = await fetch(`/api/teams/recent?t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache',
+        },
+      });
       const data = await res.json();
       if (res.ok) {
         setRecentTeams(data.teams || []);
@@ -231,15 +263,20 @@ export default function AdminDashboard() {
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
         <div className="space-y-6 p-4 md:p-6">
           {/* Header */}
-          <div className="flex items-center gap-2">
-            <UserAvatar
-              name={session?.user?.name || ''}
-              image={profileImage || (session?.user as any)?.profileImage}
-              size="lg"
-            />
-            <div>
-              <h1 className="text-2xl font-primary font-bold text-gray-800">Admin Dashboard</h1>
-              <p className="text-sm text-gray-600 mt-0.5 font-secondary">Welcome back, {session?.user?.name}</p>
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-2">
+              <UserAvatar
+                name={session?.user?.name || ''}
+                image={profileImage || (session?.user as any)?.profileImage}
+                size="lg"
+              />
+              <div>
+                <h1 className="text-2xl font-primary font-bold text-gray-800">Admin Dashboard</h1>
+                <p className="text-sm text-gray-600 mt-0.5 font-secondary">Welcome back, {session?.user?.name}</p>
+              </div>
+            </div>
+            <div className="w-full md:w-auto min-w-[280px] max-w-md">
+              <EmployeeSearch />
             </div>
           </div>
 
@@ -288,32 +325,37 @@ export default function AdminDashboard() {
             })}
           </div>
 
-          {/* Announcement Management */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4 }}
-          >
-            <AnnouncementManagement />
-          </motion.div>
+          {/* Announcement Management and Pending Employees Side by Side */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Announcement Management */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.4 }}
+              className="h-[400px] flex flex-col"
+            >
+              <AnnouncementManagement />
+            </motion.div>
 
-          {/* Pending Employees */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.5 }}
-          >
-            <PendingEmployees />
-          </motion.div>
+            {/* Pending Employees */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.5 }}
+              className="h-[400px] flex flex-col"
+            >
+              <PendingEmployees />
+            </motion.div>
+          </div>
 
-          {/* Recent Activity and Recent Teams */}
-          <div className="flex flex-col lg:flex-row gap-4">
+          {/* Recent Activity, Recent Teams, and Upcoming Birthdays */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {/* Recent Activity */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.6 }}
-              className="w-full lg:w-[350px]"
+              className="w-full"
             >
               <RecentActivity />
             </motion.div>
@@ -323,66 +365,81 @@ export default function AdminDashboard() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.7 }}
-              className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-white/50 w-full lg:w-[350px] h-[500px] flex flex-col"
+              className="bg-white rounded-2xl border border-gray-100 shadow-lg w-full h-[500px] flex flex-col overflow-hidden"
             >
-              <div className="flex items-center justify-between mb-4 flex-shrink-0">
-                <div className="flex items-center gap-2">
-                  <div className="p-2 bg-primary/10 rounded-lg">
-                    <UserCog className="w-5 h-5 text-primary" />
+              <div className="flex items-center justify-between flex-shrink-0 p-5 border-b border-violet-200/50 bg-gradient-to-r from-violet-400 via-purple-400 to-fuchsia-400">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-white/20 backdrop-blur-sm rounded-xl shadow-lg border border-white/30">
+                    <UserCog className="w-5 h-5 text-white" />
                   </div>
-                  <h2 className="text-xl font-primary font-semibold text-gray-800">Recent Teams</h2>
+                  <div>
+                    <h2 className="text-lg font-primary font-bold text-white">Recent Teams</h2>
+                    <p className="text-xs text-white/90 font-secondary mt-0.5">
+                      {recentTeams.length} {recentTeams.length === 1 ? 'team' : 'teams'} • Active groups
+                    </p>
+                  </div>
                 </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
+              <div className="flex-1 overflow-y-auto p-3 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
                 {teamsLoading && recentTeams.length === 0 ? (
-                  <div className="text-center py-8">
+                  <div className="flex flex-col items-center justify-center py-12">
                     <LoadingDots size="lg" className="mb-2" />
                     <p className="text-sm text-gray-500 font-secondary mt-2">Loading teams...</p>
                   </div>
                 ) : recentTeams.length === 0 ? (
-                  <div className="text-center py-8">
-                    <p className="text-sm text-gray-500 font-secondary">No teams created yet</p>
+                  <div className="flex flex-col items-center justify-center py-12">
+                    <div className="p-4 bg-gray-100 rounded-full mb-4">
+                      <UserCog className="w-8 h-8 text-gray-400" />
+                    </div>
+                    <p className="text-base font-primary font-semibold text-gray-600 mb-1">No teams created yet</p>
+                    <p className="text-sm text-gray-500 font-secondary">Create your first team to get started</p>
                   </div>
                 ) : (
-                  <div className="space-y-3 pr-2">
+                  <div className="space-y-2.5">
                     {recentTeams.map((team, index) => (
                       <motion.a
                         key={team._id}
                         href="/admin/teams"
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: index * 0.05 }}
-                        className="block p-3 bg-gradient-to-r from-gray-50 to-white rounded-xl border border-gray-200/50 hover:border-primary/30 hover:shadow-md transition-all group"
+                        className="group block bg-white rounded-xl border border-gray-200 hover:border-violet-400 hover:shadow-xl transition-all duration-200 p-3.5 relative shadow-sm"
                       >
-                        <div className="flex items-start gap-3">
-                          <div className="flex-shrink-0">
-                            <UserAvatar
-                              name={team.leader?.name || 'No Leader'}
-                              image={team.leader?.profileImage || null}
-                              size="sm"
-                            />
+                        <div className="flex items-start gap-2.5">
+                          <div className="relative flex-shrink-0">
+                            <div className="p-1 rounded-xl bg-gradient-to-br from-violet-50 to-purple-50 border border-violet-200">
+                              <UserAvatar
+                                name={team.leader?.name || 'No Leader'}
+                                image={team.leader?.profileImage || null}
+                                size="sm"
+                              />
+                            </div>
+                            <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-gradient-to-br from-violet-500 to-purple-500 border-2 border-white rounded-full shadow-md"></div>
                           </div>
                           <div className="flex-1 min-w-0">
-                            <h3 className="text-sm font-primary font-semibold text-gray-800 truncate group-hover:text-primary transition-colors">
+                            <h3 className="text-sm font-primary font-bold text-gray-800 truncate group-hover:text-violet-600 transition-colors mb-0.5">
                               {team.name}
                             </h3>
                             {team.description && (
-                              <p className="text-xs text-gray-600 font-secondary mt-0.5 line-clamp-1">
+                              <p className="text-xs text-gray-600 font-secondary line-clamp-1 mb-1">
                                 {team.description}
                               </p>
                             )}
-                            <div className="flex items-center gap-3 mt-1.5">
-                              <div className="flex items-center gap-1">
-                                <Users className="w-3 h-3 text-gray-400" />
-                                <span className="text-xs text-gray-500 font-secondary">
-                                  {team.members.length} member{team.members.length !== 1 ? 's' : ''}
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <div className="flex items-center gap-1 px-1.5 py-0.5 bg-violet-50 text-violet-700 rounded border border-violet-200">
+                                <Users className="w-2.5 h-2.5" />
+                                <span className="text-[10px] font-bold font-secondary">
+                                  {team.members.length} {team.members.length === 1 ? 'member' : 'members'}
                                 </span>
                               </div>
-                              <span className="text-xs text-gray-400">•</span>
-                              <span className="text-xs text-gray-500 font-secondary">
-                                {formatDistanceToNow(new Date(team.createdAt), { addSuffix: true })}
-                              </span>
+                              <span className="text-gray-300 text-[10px]">•</span>
+                              <div className="flex items-center gap-1">
+                                <Clock className="w-2.5 h-2.5 text-gray-400" />
+                                <span className="text-[10px] text-gray-500 font-secondary">
+                                  {formatDistanceToNow(new Date(team.createdAt), { addSuffix: true })}
+                                </span>
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -391,6 +448,16 @@ export default function AdminDashboard() {
                   </div>
                 )}
               </div>
+            </motion.div>
+
+            {/* Upcoming Birthdays */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.8 }}
+              className="w-full"
+            >
+              <UpcomingBirthdays />
             </motion.div>
           </div>
         </div>

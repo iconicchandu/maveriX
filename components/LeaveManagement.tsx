@@ -11,7 +11,7 @@ import UserAvatar from './UserAvatar';
 import Pagination from './Pagination';
 import AdvancedFilterBar from './AdvancedFilterBar';
 
-import { formatTimeString12Hour, formatTimeRange12Hour } from '@/lib/timeUtils';
+import { formatTimeString12Hour, formatTimeRange12Hour, formatHoursMinutes } from '@/lib/timeUtils';
 
 // Re-export for backward compatibility
 const formatTime12Hour = formatTimeString12Hour;
@@ -31,6 +31,8 @@ interface Leave {
     description?: string;
   };
   days?: number;
+  hours?: number;
+  minutes?: number;
   startDate: string;
   endDate: string;
   reason: string;
@@ -112,16 +114,41 @@ export default function LeaveManagement({
     setLeaves(initialLeaves);
   }, [initialLeaves]);
 
+  // Refetch when page becomes visible (user navigates back)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && onLeaveAdded) {
+        // Trigger parent to refetch
+        onLeaveAdded();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Refetch when window gains focus
+    const handleFocus = () => {
+      if (onLeaveAdded) {
+        onLeaveAdded();
+      }
+    };
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [onLeaveAdded]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
 
     try {
-      const res = await fetch('/api/leave', {
+      const res = await fetch(`/api/leave?t=${Date.now()}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' },
         body: JSON.stringify(formData),
+        cache: 'no-store',
       });
 
       const data = await res.json();
@@ -154,10 +181,11 @@ export default function LeaveManagement({
     );
 
     try {
-      const res = await fetch(`/api/leave/${id}`, {
+      const res = await fetch(`/api/leave/${id}?t=${Date.now()}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' },
         body: JSON.stringify({ status: 'approved' }),
+        cache: 'no-store',
       });
 
       let data: { error?: string; leave?: Leave };
@@ -224,10 +252,11 @@ export default function LeaveManagement({
     );
 
     try {
-      const res = await fetch(`/api/leave/${id}`, {
+      const res = await fetch(`/api/leave/${id}?t=${Date.now()}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' },
         body: JSON.stringify({ status: 'rejected', rejectionReason: reason }),
+        cache: 'no-store',
       });
 
       let data: { error?: string; leave?: Leave };
@@ -635,9 +664,23 @@ export default function LeaveManagement({
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <div className="text-sm text-gray-900 font-secondary">
-                      {leave.days === 0.5 ? '0.5 day' : 
-                       leave.days && leave.days < 1 && leave.days > 0 ? `${leave.days.toFixed(2)} day` : 
-                       `${leave.days || 'N/A'} ${leave.days === 1 ? 'day' : 'days'}`}
+                      {(() => {
+                        // Check if this is a shortday leave type
+                        const leaveTypeName = typeof leave.leaveType === 'object' ? leave.leaveType?.name?.toLowerCase() || '' : '';
+                        const isShortDayLeaveType = leaveTypeName.includes('shortday') || 
+                                                     leaveTypeName.includes('short-day') || 
+                                                     leaveTypeName.includes('short day');
+                        
+                        if (isShortDayLeaveType && (leave as any).hours !== undefined) {
+                          // Display hours/minutes for shortday leave types
+                          return formatHoursMinutes((leave as any).hours, (leave as any).minutes);
+                        }
+                        
+                        // Display days for regular leave types
+                        return leave.days === 0.5 ? '0.5 day' : 
+                               leave.days && leave.days < 1 && leave.days > 0 ? `${leave.days.toFixed(2)} day` : 
+                               `${leave.days || 'N/A'} ${leave.days === 1 ? 'day' : 'days'}`;
+                      })()}
                       {leave.halfDayType && (
                         <span className="ml-2 text-xs text-purple-600 font-medium">
                           ({leave.halfDayType === 'first-half' ? 'First Half' : 'Second Half'})
@@ -768,12 +811,24 @@ export default function LeaveManagement({
               </div>
               <div>
                 <span className="font-semibold">Days:</span>{' '}
-                {rejectModal.leave.days === 0.5 && rejectModal.leave.halfDayType
-                  ? rejectModal.leave.halfDayType === 'first-half' ? 'First Half' : 'Second Half'
-                  : rejectModal.leave.days && rejectModal.leave.days < 1 && rejectModal.leave.days > 0 && rejectModal.leave.shortDayTime
-                  ? `Short Day (${formatTimeRange(rejectModal.leave.shortDayTime)}) - ${rejectModal.leave.days.toFixed(2)} day`
-                  : `${rejectModal.leave.days || 'N/A'} ${rejectModal.leave.days === 1 ? 'day' : 'days'}`
-                }
+                {(() => {
+                  const leaveTypeName = typeof rejectModal.leave.leaveType === 'object' 
+                    ? rejectModal.leave.leaveType?.name?.toLowerCase() || '' 
+                    : '';
+                  const isShortDayLeaveType = leaveTypeName.includes('shortday') || 
+                                               leaveTypeName.includes('short-day') || 
+                                               leaveTypeName.includes('short day');
+                  
+                  if (isShortDayLeaveType && (rejectModal.leave as any).hours !== undefined) {
+                    return formatHoursMinutes((rejectModal.leave as any).hours, (rejectModal.leave as any).minutes);
+                  }
+                  
+                  return rejectModal.leave.days === 0.5 && rejectModal.leave.halfDayType
+                    ? rejectModal.leave.halfDayType === 'first-half' ? 'First Half' : 'Second Half'
+                    : rejectModal.leave.days && rejectModal.leave.days < 1 && rejectModal.leave.days > 0 && rejectModal.leave.shortDayTime
+                    ? `Short Day (${formatTimeRange(rejectModal.leave.shortDayTime)}) - ${rejectModal.leave.days.toFixed(2)} day`
+                    : `${rejectModal.leave.days || 'N/A'} ${rejectModal.leave.days === 1 ? 'day' : 'days'}`;
+                })()}
               </div>
               {rejectModal.leave.reason && (
                 <div>
@@ -814,12 +869,24 @@ export default function LeaveManagement({
               </div>
               <div>
                 <span className="font-semibold">Days:</span>{' '}
-                {deleteModal.leave.days === 0.5 && deleteModal.leave.halfDayType
-                  ? deleteModal.leave.halfDayType === 'first-half' ? 'First Half' : 'Second Half'
-                  : deleteModal.leave.days && deleteModal.leave.days < 1 && deleteModal.leave.days > 0 && deleteModal.leave.shortDayTime
-                  ? `Short Day (${formatTimeRange(deleteModal.leave.shortDayTime)}) - ${deleteModal.leave.days.toFixed(2)} day`
-                  : `${deleteModal.leave.days || 'N/A'} ${deleteModal.leave.days === 1 ? 'day' : 'days'}`
-                }
+                {(() => {
+                  const leaveTypeName = typeof deleteModal.leave.leaveType === 'object' 
+                    ? deleteModal.leave.leaveType?.name?.toLowerCase() || '' 
+                    : '';
+                  const isShortDayLeaveType = leaveTypeName.includes('shortday') || 
+                                               leaveTypeName.includes('short-day') || 
+                                               leaveTypeName.includes('short day');
+                  
+                  if (isShortDayLeaveType && (deleteModal.leave as any).hours !== undefined) {
+                    return formatHoursMinutes((deleteModal.leave as any).hours, (deleteModal.leave as any).minutes);
+                  }
+                  
+                  return deleteModal.leave.days === 0.5 && deleteModal.leave.halfDayType
+                    ? deleteModal.leave.halfDayType === 'first-half' ? 'First Half' : 'Second Half'
+                    : deleteModal.leave.days && deleteModal.leave.days < 1 && deleteModal.leave.days > 0 && deleteModal.leave.shortDayTime
+                    ? `Short Day (${formatTimeRange(deleteModal.leave.shortDayTime)}) - ${deleteModal.leave.days.toFixed(2)} day`
+                    : `${deleteModal.leave.days || 'N/A'} ${deleteModal.leave.days === 1 ? 'day' : 'days'}`;
+                })()}
               </div>
               <div>
                 <span className="font-semibold">Reason:</span> {deleteModal.leave.reason}

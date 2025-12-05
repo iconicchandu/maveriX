@@ -56,7 +56,7 @@ export default function EmployeeManagement({ initialEmployees, canChangeRole = t
   });
   const [deleting, setDeleting] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
+  const itemsPerPage = 20;
   const [employeesOnLeaveToday, setEmployeesOnLeaveToday] = useState<string[]>([]);
   const [showTimeLimitModal, setShowTimeLimitModal] = useState(false);
   const [defaultTimeLimit, setDefaultTimeLimit] = useState<string>('');
@@ -448,8 +448,8 @@ export default function EmployeeManagement({ initialEmployees, canChangeRole = t
   return (
     <div>
       <div className="bg-white rounded-lg shadow-sm border border-gray-100">
-        <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-          <h2 className="text-lg font-primary font-semibold text-gray-800">All Employees</h2>
+        <div className="p-3 border-b border-gray-200 flex items-center justify-between">
+          <h2 className="text-base font-primary font-semibold text-gray-800">All Employees</h2>
           <div className="flex items-center gap-2">
             {isHROrAdmin && (
               <>
@@ -458,10 +458,10 @@ export default function EmployeeManagement({ initialEmployees, canChangeRole = t
                     fetchMaxLateDays();
                     setShowTimeLimitModal(true);
                   }}
-                  className="group relative flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-lg hover:from-orange-600 hover:to-red-700 transition-all duration-200 shadow-md hover:shadow-lg text-sm font-medium"
+                  className="group relative flex items-center gap-1.5 px-2.5 py-1.5 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-lg hover:from-orange-600 hover:to-red-700 transition-all duration-200 shadow-md hover:shadow-lg text-xs font-medium"
                   title="Set maximum allowed late arrival days before casual leave deduction"
                 >
-                  <Calendar className="w-3.5 h-3.5" />
+                  <Calendar className="w-3 h-3" />
                   <span className="font-secondary">Max Days</span>
                   {maxLateDays > 0 ? (
                     <div className="flex items-center gap-1 pl-2 border-l border-white/30">
@@ -479,11 +479,11 @@ export default function EmployeeManagement({ initialEmployees, canChangeRole = t
                     fetchMaxLateDays();
                     setShowTimeLimitModal(true);
                   }}
-                  className="group relative flex items-center gap-2.5 px-4 py-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg hover:from-indigo-600 hover:to-purple-700 transition-all duration-200 shadow-md hover:shadow-lg text-sm font-medium"
+                  className="group relative flex items-center gap-1.5 px-2.5 py-1.5 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg hover:from-indigo-600 hover:to-purple-700 transition-all duration-200 shadow-md hover:shadow-lg text-xs font-medium"
                   title="Set default clock-in time limit for all employees"
                 >
-                <div className="flex items-center gap-2">
-                  <Clock className="w-3.5 h-3.5" />
+                <div className="flex items-center gap-1.5">
+                  <Clock className="w-3 h-3" />
                   <span className="font-secondary">Max Time</span>
                 </div>
                 {defaultTimeLimit ? (
@@ -500,9 +500,9 @@ export default function EmployeeManagement({ initialEmployees, canChangeRole = t
             )}
             <button
               onClick={() => handleOpenModal()}
-              className="flex items-center gap-2 px-3 py-1.5 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors text-sm"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors text-xs"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-3.5 h-3.5" />
               <span className="font-secondary">Add Employee</span>
             </button>
           </div>
@@ -512,31 +512,31 @@ export default function EmployeeManagement({ initialEmployees, canChangeRole = t
           <table className="w-full">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider font-primary">
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider font-primary">
                   Name
                 </th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider font-primary">
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider font-primary">
                   Email
                 </th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider font-primary">
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider font-primary">
                   Role
                 </th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider font-primary">
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider font-primary">
                   Designation
                 </th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider font-primary">
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider font-primary">
                   Weekly Off
                 </th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider font-primary">
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider font-primary">
                   Clockin Time
                 </th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider font-primary">
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider font-primary">
                   Email Status
                 </th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider font-primary">
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider font-primary">
                   Approval Status
                 </th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider font-primary">
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider font-primary">
                   Actions
                 </th>
               </tr>
@@ -549,39 +549,39 @@ export default function EmployeeManagement({ initialEmployees, canChangeRole = t
                   animate={{ opacity: 1 }}
                   className="hover:bg-gray-50"
                 >
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    <div className="flex items-center gap-3">
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    <div className="flex items-center gap-2">
                       <UserAvatar
                         name={employee.name}
                         image={employee.profileImage}
-                        size="md"
+                        size="sm"
                       />
-                      <div className="flex items-center gap-2">
-                        <div className="text-sm font-medium text-gray-900 font-secondary">{employee.name}</div>
+                      <div className="flex items-center gap-1.5">
+                        <div className="text-xs font-medium text-gray-900 font-secondary">{employee.name}</div>
                         {employeesOnLeaveToday.includes(employee._id) && (
-                          <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-orange-100 text-orange-800 flex items-center gap-1 font-secondary">
-                            <Calendar className="w-3 h-3" />
+                          <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded-full bg-orange-100 text-orange-800 flex items-center gap-0.5 font-secondary">
+                            <Calendar className="w-2.5 h-2.5" />
                             On Leave
                           </span>
                         )}
                       </div>
                     </div>
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    <div className="text-sm text-gray-900 font-secondary">{employee.email}</div>
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    <div className="text-xs text-gray-900 font-secondary">{employee.email}</div>
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    <span className="px-2 py-0.5 inline-flex text-xs leading-4 font-semibold rounded-full bg-blue-100 text-blue-800 capitalize font-secondary">
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    <span className="px-1.5 py-0.5 inline-flex text-[10px] leading-4 font-semibold rounded-full bg-blue-100 text-blue-800 capitalize font-secondary">
                       {employee.role}
                     </span>
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    <div className="text-sm text-gray-900 font-secondary">
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    <div className="text-xs text-gray-900 font-secondary">
                       {employee.designation || <span className="text-gray-400 italic">Not set</span>}
                     </div>
                   </td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-1.5">
+                  <td className="px-3 py-2">
+                    <div className="flex flex-wrap gap-1">
                       {(() => {
                         const weeklyOffArray = Array.isArray(employee.weeklyOff) ? employee.weeklyOff : [];
                         console.log(`[Display] Employee ${employee.name} weeklyOff:`, weeklyOffArray, 'Type:', typeof employee.weeklyOff);
@@ -589,42 +589,42 @@ export default function EmployeeManagement({ initialEmployees, canChangeRole = t
                           return weeklyOffArray.map((day: string) => (
                             <span
                               key={day}
-                              className="px-2.5 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 font-secondary whitespace-nowrap"
+                              className="px-1.5 py-0.5 text-[10px] font-semibold rounded-full bg-purple-100 text-purple-700 font-secondary whitespace-nowrap"
                               title={day}
                             >
                               {day.substring(0, 3)}
                             </span>
                           ));
                         } else {
-                          return <span className="text-xs text-gray-400 italic font-secondary">Not set</span>;
+                          return <span className="text-[10px] text-gray-400 italic font-secondary">Not set</span>;
                         }
                       })()}
                     </div>
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    <div className="flex items-center gap-2">
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    <div className="flex items-center gap-1">
                       {employee.clockInTime === 'N/R' ? (
-                        <span className="px-2 py-0.5 inline-flex items-center gap-1 text-xs leading-4 font-semibold rounded-full bg-green-100 text-green-800 font-secondary">
+                        <span className="px-1.5 py-0.5 inline-flex items-center gap-0.5 text-[10px] leading-4 font-semibold rounded-full bg-green-100 text-green-800 font-secondary">
                           N/R
                         </span>
                       ) : employee.clockInTime && employee.clockInTime.trim() !== '' ? (
-                        <span className="px-2 py-0.5 inline-flex items-center gap-1 text-xs leading-4 font-semibold rounded-full bg-blue-100 text-blue-800 font-secondary">
-                          <Clock className="w-3 h-3" />
+                        <span className="px-1.5 py-0.5 inline-flex items-center gap-0.5 text-[10px] leading-4 font-semibold rounded-full bg-blue-100 text-blue-800 font-secondary">
+                          <Clock className="w-2.5 h-2.5" />
                           {formatTimeString12Hour(employee.clockInTime)}
                         </span>
                       ) : defaultTimeLimit ? (
-                        <span className="px-2 py-0.5 inline-flex items-center gap-1 text-xs leading-4 font-semibold rounded-full bg-gray-100 text-gray-700 font-secondary">
-                          <Clock className="w-3 h-3" />
-                          {formatTimeString12Hour(defaultTimeLimit)} <span className="text-gray-500 text-[10px]">(Default)</span>
+                        <span className="px-1.5 py-0.5 inline-flex items-center gap-0.5 text-[10px] leading-4 font-semibold rounded-full bg-gray-100 text-gray-700 font-secondary">
+                          <Clock className="w-2.5 h-2.5" />
+                          {formatTimeString12Hour(defaultTimeLimit)} <span className="text-gray-500 text-[9px]">(Def)</span>
                         </span>
                       ) : (
-                        <span className="text-xs text-gray-400 italic font-secondary">Not set</span>
+                        <span className="text-[10px] text-gray-400 italic font-secondary">Not set</span>
                       )}
                     </div>
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap">
+                  <td className="px-3 py-2 whitespace-nowrap">
                     <span
-                      className={`px-2 py-0.5 inline-flex text-xs leading-4 font-semibold rounded-full font-secondary ${
+                      className={`px-1.5 py-0.5 inline-flex text-[10px] leading-4 font-semibold rounded-full font-secondary ${
                         employee.emailVerified
                           ? 'bg-green-100 text-green-800'
                           : 'bg-yellow-100 text-yellow-800'
@@ -633,9 +633,9 @@ export default function EmployeeManagement({ initialEmployees, canChangeRole = t
                       {employee.emailVerified ? 'Verified' : 'Pending'}
                     </span>
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap">
+                  <td className="px-3 py-2 whitespace-nowrap">
                     <span
-                      className={`px-2 py-0.5 inline-flex text-xs leading-4 font-semibold rounded-full font-secondary ${
+                      className={`px-1.5 py-0.5 inline-flex text-[10px] leading-4 font-semibold rounded-full font-secondary ${
                         employee.approved === true
                           ? 'bg-green-100 text-green-800'
                           : employee.emailVerified
@@ -650,19 +650,19 @@ export default function EmployeeManagement({ initialEmployees, canChangeRole = t
                         : 'Not Verified'}
                     </span>
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-sm font-medium">
-                    <div className="flex items-center gap-2">
+                  <td className="px-3 py-2 whitespace-nowrap text-xs font-medium">
+                    <div className="flex items-center gap-1">
                       <button
                         onClick={() => handleOpenModal(employee)}
-                        className="text-primary hover:text-primary-dark p-1 rounded hover:bg-primary-50"
+                        className="text-primary hover:text-primary-dark p-0.5 rounded hover:bg-primary-50"
                       >
-                        <Edit className="w-4 h-4" />
+                        <Edit className="w-3.5 h-3.5" />
                       </button>
                       <button
                         onClick={() => handleDeleteClick(employee)}
-                        className="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50"
+                        className="text-red-600 hover:text-red-900 p-0.5 rounded hover:bg-red-50"
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </td>

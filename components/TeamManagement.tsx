@@ -63,8 +63,10 @@ export default function TeamManagement() {
   const [leaderDropdownOpen, setLeaderDropdownOpen] = useState(false);
   const [leaderSearchTerm, setLeaderSearchTerm] = useState('');
   const [memberSearchTerm, setMemberSearchTerm] = useState('');
+  const [memberDropdownOpen, setMemberDropdownOpen] = useState(false);
   const leaderDropdownRef = useRef<HTMLDivElement>(null);
-  const memberSearchRef = useRef<HTMLInputElement>(null);
+  const memberSearchRef = useRef<HTMLDivElement>(null);
+  const memberInputRef = useRef<HTMLInputElement>(null);
   const toast = useToast();
 
   const fetchTeams = useCallback(async () => {
@@ -227,16 +229,19 @@ export default function TeamManagement() {
       if (leaderDropdownRef.current && !leaderDropdownRef.current.contains(event.target as Node)) {
         setLeaderDropdownOpen(false);
       }
+      if (memberSearchRef.current && !memberSearchRef.current.contains(event.target as Node)) {
+        setMemberDropdownOpen(false);
+      }
     };
 
-    if (leaderDropdownOpen) {
+    if (leaderDropdownOpen || memberDropdownOpen) {
       document.addEventListener('mousedown', handleClickOutside);
     }
 
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [leaderDropdownOpen]);
+  }, [leaderDropdownOpen, memberDropdownOpen]);
 
   // Get team info for an employee (if they're a leader)
   const getEmployeeTeamAsLeader = (employeeId: string) => {
@@ -287,13 +292,20 @@ export default function TeamManagement() {
     return matchesSearch;
   });
 
-  // Filter employees for team members - show all but exclude selected leader
+  // Filter employees for team members - show all but exclude selected leader and already selected members
   const filteredMemberEmployees = employees.filter((emp) => {
     const matchesSearch =
       emp.name.toLowerCase().includes(memberSearchTerm.toLowerCase()) ||
       emp.email.toLowerCase().includes(memberSearchTerm.toLowerCase());
-    return matchesSearch && emp._id !== formData.leader;
+    const isNotLeader = emp._id !== formData.leader;
+    const isNotSelected = !formData.members.includes(emp._id);
+    return matchesSearch && isNotLeader && isNotSelected;
   });
+
+  // Get selected member employees for display as tags
+  const selectedMemberEmployees = useMemo(() => {
+    return employees.filter((emp) => formData.members.includes(emp._id));
+  }, [employees, formData.members]);
 
   const selectedLeader = employees.find((emp) => emp._id === formData.leader);
 
@@ -650,98 +662,129 @@ export default function TeamManagement() {
                   </div>
                 </div>
 
-                {/* Team Members with Search */}
+                {/* Team Members with Tag Input */}
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2 font-secondary">
                     Team Members
                   </label>
                   
-                  {/* Search Box for Members */}
-                  <div className="mb-3">
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 z-10 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                  {/* Tag Input Container */}
+                  <div className="relative" ref={memberSearchRef}>
+                    <div className="min-h-[48px] w-full px-3 py-2 text-sm text-gray-700 border-2 border-gray-200 rounded-lg focus-within:ring-2 focus-within:ring-primary/50 focus-within:border-primary/50 outline-none font-secondary bg-white/80 backdrop-blur-sm shadow-sm transition-all flex flex-wrap gap-2 items-center">
+                      {/* Selected Member Tags */}
+                      {selectedMemberEmployees.map((emp) => {
+                        const teamAsLeader = getEmployeeTeamAsLeader(emp._id);
+                        const teamAsMember = getEmployeeTeamAsMember(emp._id);
+                        const isAvailable = isEmployeeAvailable(emp._id);
+                        
+                        return (
+                          <motion.span
+                            key={emp._id}
+                            initial={{ opacity: 0, scale: 0.8 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-gray-100 text-gray-700 rounded-md text-xs font-medium font-secondary"
+                          >
+                            <span>{emp.name}</span>
+                            {!isAvailable && (
+                              <span className="text-[10px] text-gray-500">(Unavailable)</span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => toggleMember(emp._id)}
+                              className="ml-0.5 hover:bg-gray-200 rounded-full p-0.5 transition-colors"
+                            >
+                              <X className="w-3 h-3 text-gray-500 hover:text-gray-700" />
+                            </button>
+                          </motion.span>
+                        );
+                      })}
+                      
+                      {/* Input Field */}
                       <input
-                        ref={memberSearchRef}
+                        ref={memberInputRef}
                         type="text"
                         value={memberSearchTerm}
-                        onChange={(e) => setMemberSearchTerm(e.target.value)}
-                        placeholder="Search team members..."
-                        className="w-full pl-10 pr-4 py-2.5 text-sm text-gray-700 border border-gray-300/50 rounded-xl focus:ring-2 focus:ring-primary/50 focus:border-primary/50 outline-none font-secondary bg-white/80 backdrop-blur-sm shadow-sm"
+                        onChange={(e) => {
+                          setMemberSearchTerm(e.target.value);
+                          setMemberDropdownOpen(true);
+                        }}
+                        onFocus={() => {
+                          if (memberSearchTerm) {
+                            setMemberDropdownOpen(true);
+                          }
+                        }}
+                        placeholder={selectedMemberEmployees.length === 0 ? "Search and select team members..." : ""}
+                        className="flex-1 min-w-[120px] outline-none bg-transparent text-sm font-secondary placeholder:text-gray-400"
                       />
                     </div>
-                  </div>
 
-                  {/* Members Selection */}
-                  <div className="border border-gray-300/50 rounded-xl p-4 max-h-64 overflow-y-auto bg-white/50 backdrop-blur-sm shadow-inner">
-                    {filteredMemberEmployees.length === 0 ? (
-                      <div className="text-center py-4">
-                        <p className="text-sm text-gray-500 font-secondary">
-                          {memberSearchTerm ? 'No employees found' : 'No employees available'}
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {filteredMemberEmployees.map((emp) => {
-                          const isSelected = formData.members.includes(emp._id);
-                          const teamAsLeader = getEmployeeTeamAsLeader(emp._id);
-                          const teamAsMember = getEmployeeTeamAsMember(emp._id);
-                          const isAvailable = isEmployeeAvailable(emp._id);
+                    {/* Autocomplete Dropdown */}
+                    <AnimatePresence>
+                      {memberDropdownOpen && memberSearchTerm && filteredMemberEmployees.length > 0 && (
+                        <motion.div
+                          initial={{ opacity: 0, y: -10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -10 }}
+                          className="absolute z-50 w-full mt-2 bg-white rounded-lg shadow-lg border border-gray-200 max-h-60 overflow-y-auto"
+                        >
+                          {filteredMemberEmployees.map((emp) => {
+                            const teamAsLeader = getEmployeeTeamAsLeader(emp._id);
+                            const teamAsMember = getEmployeeTeamAsMember(emp._id);
+                            const isAvailable = isEmployeeAvailable(emp._id);
 
-                          return (
-                            <label
-                              key={emp._id}
-                              className={`flex items-center gap-3 p-3 rounded-xl transition-all ${
-                                isSelected
-                                  ? 'bg-primary/10 border-2 border-primary/30 shadow-sm cursor-pointer'
-                                  : isAvailable
-                                  ? 'bg-white/80 border border-gray-200/50 hover:bg-primary/5 hover:border-primary/20 cursor-pointer'
-                                  : 'bg-gray-50/50 border border-gray-200/30 opacity-60 cursor-not-allowed'
-                              }`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={() => {
-                                  if (isAvailable || isSelected) {
+                            return (
+                              <button
+                                key={emp._id}
+                                type="button"
+                                onClick={() => {
+                                  if (isAvailable) {
                                     toggleMember(emp._id);
+                                    setMemberSearchTerm('');
+                                    setMemberDropdownOpen(false);
+                                    memberInputRef.current?.focus();
                                   }
                                 }}
-                                disabled={!isAvailable && !isSelected}
-                                className="h-4 w-4 text-primary rounded border-gray-300 focus:ring-primary/50 disabled:cursor-not-allowed disabled:opacity-50"
-                              />
-                              <UserAvatar
-                                name={emp.name}
-                                image={emp.profileImage}
-                                size="sm"
-                              />
-                              <div className="flex-1">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <div className="text-sm font-medium text-gray-900">{emp.name}</div>
-                                  {teamAsLeader && (
-                                    <span className="px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 rounded-full">
-                                      Leader: {teamAsLeader.name}
-                                    </span>
-                                  )}
-                                  {teamAsMember && !teamAsLeader && (
-                                    <span className="px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-700 rounded-full">
-                                      {teamAsMember.name}
-                                    </span>
-                                  )}
+                                disabled={!isAvailable}
+                                className={`w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-b-0 ${
+                                  !isAvailable ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
+                                }`}
+                              >
+                                <div className="flex items-center gap-3">
+                                  <UserAvatar
+                                    name={emp.name}
+                                    image={emp.profileImage}
+                                    size="sm"
+                                  />
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <div className="text-sm font-medium text-gray-900 truncate">{emp.name}</div>
+                                      {teamAsLeader && (
+                                        <span className="px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 rounded-full whitespace-nowrap">
+                                          Leader: {teamAsLeader.name}
+                                        </span>
+                                      )}
+                                      {teamAsMember && !teamAsLeader && (
+                                        <span className="px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-700 rounded-full whitespace-nowrap">
+                                          {teamAsMember.name}
+                                        </span>
+                                      )}
+                                      {!isAvailable && (
+                                        <span className="px-2 py-0.5 text-xs font-medium bg-orange-100 text-orange-700 rounded-full whitespace-nowrap">
+                                          Unavailable
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="text-xs text-gray-500 truncate">{emp.email}</div>
+                                  </div>
                                 </div>
-                                <div className="text-xs text-gray-500">{emp.email}</div>
-                              </div>
-                              {isSelected && (
-                                <Check className="w-4 h-4 text-primary" />
-                              )}
-                              {!isAvailable && !isSelected && (
-                                <span className="text-xs text-gray-400">Unavailable</span>
-                              )}
-                            </label>
-                          );
-                        })}
-                      </div>
-                    )}
+                              </button>
+                            );
+                          })}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
+                  
                   <p className="text-xs text-gray-500 mt-2 font-secondary">
                     Note: The team leader is automatically included as a member
                   </p>

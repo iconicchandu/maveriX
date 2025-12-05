@@ -72,39 +72,108 @@ export async function PUT(
       });
 
       if (allottedLeave) {
-        const requestedDays = leave.days || 0;
+        // Check if this is a shortday leave type
+        const LeaveType = (await import('@/models/LeaveType')).default;
+        const leaveTypeDoc = await LeaveType.findById(leave.leaveType);
+        const leaveTypeName = leaveTypeDoc?.name?.toLowerCase() || '';
+        const isShortDayLeaveType = leaveTypeName.includes('shortday') || 
+                                     leaveTypeName.includes('short-day') || 
+                                     leaveTypeName.includes('short day');
 
-        if (status === 'approved' && previousStatus !== 'approved') {
-          // Deduct from balance when approving
-          // Calculate actual remaining days based on approved requests
-          const approvedRequests = await Leave.find({
-            userId: leave.userId,
-            leaveType: leave.leaveType,
-            allottedBy: { $exists: false },
-            status: 'approved',
-            _id: { $ne: leave._id }, // Exclude current request
-          }).lean();
+        if (isShortDayLeaveType) {
+          // Handle shortday leave types with hours/minutes
+          const requestedHours = leave.hours || 0;
+          const requestedMinutes = leave.minutes || 0;
+          const requestedTotalMinutes = requestedHours * 60 + requestedMinutes;
 
-          const totalUsed = approvedRequests.reduce((sum: number, req: any) => sum + (req.days || 0), 0);
-          const actualRemainingDays = Math.max(0, (allottedLeave.days || 0) - totalUsed);
+          if (status === 'approved' && previousStatus !== 'approved') {
+            // Deduct from balance when approving
+            const approvedRequests = await Leave.find({
+              userId: leave.userId,
+              leaveType: leave.leaveType,
+              allottedBy: { $exists: false },
+              status: 'approved',
+              _id: { $ne: leave._id },
+            }).lean();
 
-          // Update remainingDays in allotted leave
-          allottedLeave.remainingDays = actualRemainingDays - requestedDays;
-          await allottedLeave.save();
-        } else if (status === 'rejected' && previousStatus === 'approved') {
-          // Restore balance if rejecting a previously approved leave
-          // Recalculate remaining days (excluding this leave since it will be rejected)
-          const approvedRequests = await Leave.find({
-            userId: leave.userId,
-            leaveType: leave.leaveType,
-            allottedBy: { $exists: false },
-            status: 'approved',
-            _id: { $ne: leave._id }, // Exclude current request
-          }).lean();
+            // Calculate total used minutes
+            let totalUsedMinutes = 0;
+            approvedRequests.forEach((req: any) => {
+              const reqHours = req.hours || 0;
+              const reqMinutes = req.minutes || 0;
+              totalUsedMinutes += reqHours * 60 + reqMinutes;
+            });
 
-          const totalUsed = approvedRequests.reduce((sum: number, req: any) => sum + (req.days || 0), 0);
-          allottedLeave.remainingDays = Math.max(0, (allottedLeave.days || 0) - totalUsed);
-          await allottedLeave.save();
+            // Calculate remaining
+            const totalAllottedMinutes = (allottedLeave.hours || 0) * 60 + (allottedLeave.minutes || 0);
+            const actualRemainingMinutes = Math.max(0, totalAllottedMinutes - totalUsedMinutes);
+            const newRemainingMinutes = actualRemainingMinutes - requestedTotalMinutes;
+
+            // Update remaining hours and minutes
+            allottedLeave.remainingHours = Math.floor(newRemainingMinutes / 60);
+            allottedLeave.remainingMinutes = newRemainingMinutes % 60;
+            await allottedLeave.save();
+          } else if (status === 'rejected' && previousStatus === 'approved') {
+            // Restore balance if rejecting a previously approved leave
+            const approvedRequests = await Leave.find({
+              userId: leave.userId,
+              leaveType: leave.leaveType,
+              allottedBy: { $exists: false },
+              status: 'approved',
+              _id: { $ne: leave._id },
+            }).lean();
+
+            // Calculate total used minutes (excluding this leave)
+            let totalUsedMinutes = 0;
+            approvedRequests.forEach((req: any) => {
+              const reqHours = req.hours || 0;
+              const reqMinutes = req.minutes || 0;
+              totalUsedMinutes += reqHours * 60 + reqMinutes;
+            });
+
+            // Calculate remaining
+            const totalAllottedMinutes = (allottedLeave.hours || 0) * 60 + (allottedLeave.minutes || 0);
+            const actualRemainingMinutes = Math.max(0, totalAllottedMinutes - totalUsedMinutes);
+
+            // Update remaining hours and minutes
+            allottedLeave.remainingHours = Math.floor(actualRemainingMinutes / 60);
+            allottedLeave.remainingMinutes = actualRemainingMinutes % 60;
+            await allottedLeave.save();
+          }
+        } else {
+          // Handle regular leave types with days
+          const requestedDays = leave.days || 0;
+
+          if (status === 'approved' && previousStatus !== 'approved') {
+            // Deduct from balance when approving
+            const approvedRequests = await Leave.find({
+              userId: leave.userId,
+              leaveType: leave.leaveType,
+              allottedBy: { $exists: false },
+              status: 'approved',
+              _id: { $ne: leave._id },
+            }).lean();
+
+            const totalUsed = approvedRequests.reduce((sum: number, req: any) => sum + (req.days || 0), 0);
+            const actualRemainingDays = Math.max(0, (allottedLeave.days || 0) - totalUsed);
+
+            // Update remainingDays in allotted leave
+            allottedLeave.remainingDays = actualRemainingDays - requestedDays;
+            await allottedLeave.save();
+          } else if (status === 'rejected' && previousStatus === 'approved') {
+            // Restore balance if rejecting a previously approved leave
+            const approvedRequests = await Leave.find({
+              userId: leave.userId,
+              leaveType: leave.leaveType,
+              allottedBy: { $exists: false },
+              status: 'approved',
+              _id: { $ne: leave._id },
+            }).lean();
+
+            const totalUsed = approvedRequests.reduce((sum: number, req: any) => sum + (req.days || 0), 0);
+            allottedLeave.remainingDays = Math.max(0, (allottedLeave.days || 0) - totalUsed);
+            await allottedLeave.save();
+          }
         }
       }
     }
@@ -168,6 +237,12 @@ export async function PUT(
       const approver = typeof updatedLeave.approvedBy === 'object' && updatedLeave.approvedBy && 'name' in updatedLeave.approvedBy ? updatedLeave.approvedBy as any : null;
 
       if (user && leaveType && 'email' in user && user.email) {
+        // Check if this is a shortday leave type
+        const leaveTypeName = (leaveType.name as string)?.toLowerCase() || '';
+        const isShortDayLeaveType = leaveTypeName.includes('shortday') || 
+                                   leaveTypeName.includes('short-day') || 
+                                   leaveTypeName.includes('short day');
+        
         await sendLeaveStatusNotificationToEmployee({
           employeeName: (user.name as string) || 'Employee',
           employeeEmail: user.email as string,
@@ -180,6 +255,8 @@ export async function PUT(
           approvedBy: approver ? (approver.name as string) : undefined,
           halfDayType: (updatedLeave as any).halfDayType, // Include half-day type if present
           shortDayTime: (updatedLeave as any).shortDayTime, // Include short-day time if present
+          hours: isShortDayLeaveType ? ((updatedLeave as any).hours || 0) : undefined, // Include hours for shortday leaves
+          minutes: isShortDayLeaveType ? ((updatedLeave as any).minutes || 0) : undefined, // Include minutes for shortday leaves
         });
       }
     } catch (emailError) {

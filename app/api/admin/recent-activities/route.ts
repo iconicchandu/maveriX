@@ -32,7 +32,8 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if ((session.user as any).role !== 'admin') {
+    const role = (session.user as any).role;
+    if (role !== 'admin' && role !== 'hr') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -120,7 +121,11 @@ export async function GET() {
       timestamp: activity.timestamp.toISOString(),
     }));
 
-    return NextResponse.json({ activities: serializedActivities });
+    const response = NextResponse.json({ activities: serializedActivities });
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    response.headers.set('Pragma', 'no-cache');
+    response.headers.set('Expires', '0');
+    return response;
   } catch (error) {
     console.error('Error fetching recent activities:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

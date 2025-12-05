@@ -10,6 +10,11 @@ import LoadingDots from './LoadingDots';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
 import Pagination from './Pagination';
 import UserAvatar from './UserAvatar';
+import { formatTimeString12Hour, formatTimeRange12Hour, formatHoursMinutes } from '@/lib/timeUtils';
+
+// Re-export for backward compatibility
+const formatTime12Hour = formatTimeString12Hour;
+const formatTimeRange = formatTimeRange12Hour;
 
 interface Leave {
   _id: string;
@@ -27,6 +32,10 @@ interface Leave {
   endDate: string;
   days?: number;
   remainingDays?: number;
+  hours?: number;
+  minutes?: number;
+  remainingHours?: number;
+  remainingMinutes?: number;
   reason: string;
   status: 'pending' | 'approved' | 'rejected';
   halfDayType?: 'first-half' | 'second-half';
@@ -44,12 +53,6 @@ interface EmployeeLeaveViewProps {
   initialLeaves: Leave[];
   onLeavesUpdated?: () => void;
 }
-
-import { formatTimeString12Hour, formatTimeRange12Hour } from '@/lib/timeUtils';
-
-// Re-export for backward compatibility
-const formatTime12Hour = formatTimeString12Hour;
-const formatTimeRange = formatTimeRange12Hour;
 
 export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: EmployeeLeaveViewProps) {
   const [leaves, setLeaves] = useState(initialLeaves);
@@ -75,6 +78,16 @@ export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: Em
   const [teamMembersOnLeave, setTeamMembersOnLeave] = useState<any[]>([]);
   const [loadingTeamMembers, setLoadingTeamMembers] = useState(false);
   const toast = useToast();
+
+  const fetchAllottedLeaveTypes = async () => {
+    try {
+      const res = await fetch('/api/leave/allotted-types');
+      const data = await res.json();
+      setLeaveTypes(data.leaveTypes || []);
+    } catch (err) {
+      console.error('Error fetching allotted leave types:', err);
+    }
+  };
 
   useEffect(() => {
     fetchAllottedLeaveTypes();
@@ -116,29 +129,19 @@ export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: Em
     return () => clearTimeout(timer);
   }, [formData.startDate, formData.endDate]);
 
-  const fetchAllottedLeaveTypes = async () => {
-    try {
-      const res = await fetch('/api/leave/allotted-types');
-      const data = await res.json();
-      setLeaveTypes(data.leaveTypes || []);
-    } catch (err) {
-      console.error('Error fetching allotted leave types:', err);
-    }
-  };
-
   const handleRequestLeave = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     // Check if selected leave type is halfday or shortday
     const selectedLeaveType = leaveTypes.find((type) => type._id === formData.leaveType);
-    const isHalfDay = selectedLeaveType?.name?.toLowerCase().includes('halfday') || 
-                     selectedLeaveType?.name?.toLowerCase().includes('half-day') || 
-                     selectedLeaveType?.name?.toLowerCase().includes('half day');
-    const isShortDay = selectedLeaveType?.name?.toLowerCase().includes('shortday') || 
-                      selectedLeaveType?.name?.toLowerCase().includes('short-day') || 
-                      selectedLeaveType?.name?.toLowerCase().includes('short day');
-    
+    const isHalfDay = selectedLeaveType?.name?.toLowerCase().includes('halfday') ||
+      selectedLeaveType?.name?.toLowerCase().includes('half-day') ||
+      selectedLeaveType?.name?.toLowerCase().includes('half day');
+    const isShortDay = selectedLeaveType?.name?.toLowerCase().includes('shortday') ||
+      selectedLeaveType?.name?.toLowerCase().includes('short-day') ||
+      selectedLeaveType?.name?.toLowerCase().includes('short day');
+
     // Validate half-day selection
     if (isHalfDay && !formData.halfDayType) {
       toast.error('Please select first half or second half for half-day leave');
@@ -168,22 +171,7 @@ export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: Em
     if (formData.leaveType && formData.startDate && formData.endDate) {
       const start = new Date(formData.startDate);
       const end = new Date(formData.endDate);
-      // For half-day, use 0.5 days; for short-day, calculate based on time range; otherwise calculate normally
-      let requestedDays: number;
-      if (isHalfDay) {
-        requestedDays = 0.5;
-      } else if (isShortDay && formData.shortDayFromTime && formData.shortDayToTime) {
-        // Calculate days based on hours for short-day
-        const fromTime = new Date(`2000-01-01T${formData.shortDayFromTime}`);
-        const toTime = new Date(`2000-01-01T${formData.shortDayToTime}`);
-        const hours = (toTime.getTime() - fromTime.getTime()) / (1000 * 60 * 60);
-        requestedDays = hours / 24; // Convert hours to days
-      } else if (isShortDay) {
-        requestedDays = 0.25; // Fallback if times not provided
-      } else {
-        requestedDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-      }
-
+      
       // Find the allotted leave for this leave type
       const allottedLeavesList = leaves.filter((leave) => leave.allottedBy);
       const allottedLeave = allottedLeavesList.find((leave) => {
@@ -192,14 +180,49 @@ export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: Em
       });
 
       if (allottedLeave) {
-        const remainingDays = allottedLeave.remainingDays !== undefined ? allottedLeave.remainingDays : (allottedLeave.days || 0);
-        if (remainingDays < requestedDays) {
-          const requestedDaysDisplay = requestedDays === 0.5 ? '0.5' : 
-                                      requestedDays < 1 && requestedDays > 0 ? requestedDays.toFixed(2) : 
-                                      requestedDays.toString();
-          toast.error(`Insufficient leave balance. You have ${remainingDays} days remaining, but requested ${requestedDaysDisplay} ${requestedDays === 0.5 || (requestedDays < 1 && requestedDays > 0) ? 'day' : 'days'}.`);
-          setLoading(false);
-          return;
+        // Check if this is a shortday leave type
+        const leaveTypeName = typeof allottedLeave.leaveType === 'object' ? allottedLeave.leaveType?.name?.toLowerCase() || '' : '';
+        const isShortDayLeaveType = leaveTypeName.includes('shortday') || 
+                                     leaveTypeName.includes('short-day') || 
+                                     leaveTypeName.includes('short day');
+
+        if (isShortDayLeaveType && formData.shortDayFromTime && formData.shortDayToTime) {
+          // For shortday leaves, validate using hours/minutes
+          const fromTime = new Date(`2000-01-01T${formData.shortDayFromTime}`);
+          const toTime = new Date(`2000-01-01T${formData.shortDayToTime}`);
+          const diffMs = toTime.getTime() - fromTime.getTime();
+          const requestedTotalMinutes = Math.floor(diffMs / (1000 * 60));
+          const requestedHours = Math.floor(requestedTotalMinutes / 60);
+          const requestedMinutes = requestedTotalMinutes % 60;
+
+          const totalAllottedMinutes = ((allottedLeave as any).hours || 0) * 60 + ((allottedLeave as any).minutes || 0);
+          const totalRemainingMinutes = ((allottedLeave as any).remainingHours || 0) * 60 + ((allottedLeave as any).remainingMinutes || 0);
+
+          if (totalRemainingMinutes < requestedTotalMinutes) {
+            const remainingHours = Math.floor(totalRemainingMinutes / 60);
+            const remainingMinutes = totalRemainingMinutes % 60;
+            toast.error(`Insufficient leave balance. You have ${formatHoursMinutes(remainingHours, remainingMinutes)} remaining, but requested ${formatHoursMinutes(requestedHours, requestedMinutes)}.`);
+            setLoading(false);
+            return;
+          }
+        } else {
+          // For regular leaves, validate using days
+          let requestedDays: number;
+          if (isHalfDay) {
+            requestedDays = 0.5;
+          } else {
+            requestedDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+          }
+
+          const remainingDays = allottedLeave.remainingDays !== undefined ? allottedLeave.remainingDays : (allottedLeave.days || 0);
+          if (remainingDays < requestedDays) {
+            const requestedDaysDisplay = requestedDays === 0.5 ? '0.5' :
+              requestedDays < 1 && requestedDays > 0 ? requestedDays.toFixed(2) :
+                requestedDays.toString();
+            toast.error(`Insufficient leave balance. You have ${remainingDays} days remaining, but requested ${requestedDaysDisplay} ${requestedDays === 0.5 || (requestedDays < 1 && requestedDays > 0) ? 'day' : 'days'}.`);
+            setLoading(false);
+            return;
+          }
         }
       }
     }
@@ -364,9 +387,37 @@ export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: Em
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {allottedLeaves.map((leave) => {
-            const totalDays = leave.days || 0;
-            const remainingDays = leave.remainingDays !== undefined ? leave.remainingDays : totalDays;
-            const usedDays = totalDays - remainingDays;
+            // Check if this is a shortday leave type
+            const leaveTypeName = typeof leave.leaveType === 'object' ? leave.leaveType?.name?.toLowerCase() || '' : '';
+            const isShortDayLeaveType = leaveTypeName.includes('shortday') ||
+              leaveTypeName.includes('short-day') ||
+              leaveTypeName.includes('short day');
+
+            let totalDays = leave.days || 0;
+            let remainingDays = leave.remainingDays !== undefined ? leave.remainingDays : totalDays;
+            let usedDays = totalDays - remainingDays;
+
+            // For shortday leave types, use hours/minutes
+            let totalHours = 0;
+            let totalMinutes = 0;
+            let remainingHours = 0;
+            let remainingMinutes = 0;
+            let usedHours = 0;
+            let usedMins = 0;
+
+            if (isShortDayLeaveType) {
+              totalHours = leave.hours || 0;
+              totalMinutes = leave.minutes || 0;
+              remainingHours = leave.remainingHours !== undefined ? leave.remainingHours : totalHours;
+              remainingMinutes = leave.remainingMinutes !== undefined ? leave.remainingMinutes : totalMinutes;
+
+              // Calculate used hours/minutes
+              const totalAllottedMinutes = totalHours * 60 + totalMinutes;
+              const totalRemainingMinutes = remainingHours * 60 + remainingMinutes;
+              const totalUsedMinutes = totalAllottedMinutes - totalRemainingMinutes;
+              usedHours = Math.floor(totalUsedMinutes / 60);
+              usedMins = totalUsedMinutes % 60;
+            }
 
             return (
               <motion.div
@@ -379,8 +430,14 @@ export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: Em
                   {/* Circle Progress Chart - Left Side */}
                   <div className="flex-shrink-0">
                     <CircleProgress
-                      value={remainingDays}
-                      max={totalDays}
+                      value={isShortDayLeaveType
+                        ? (totalHours * 60 + totalMinutes) > 0
+                          ? (remainingHours * 60 + remainingMinutes) / (totalHours * 60 + totalMinutes) * 100
+                          : 0
+                        : totalDays > 0
+                          ? (remainingDays / totalDays) * 100
+                          : 0}
+                      max={100}
                       strokeWidth={10}
                       size={100}
                     />
@@ -397,17 +454,27 @@ export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: Em
                     <div className="space-y-2">
                       <div className="flex items-center justify-between bg-green-100 px-1 py-1 rounded-lg">
                         <span className="text-sm text-gray-600 font-secondary">Total</span>
-                        <span className="text-sm font-primary font-semibold text-green-600">{totalDays} days</span>
+                        <span className="text-sm font-primary font-semibold text-green-600">
+                          {isShortDayLeaveType
+                            ? formatHoursMinutes(totalHours, totalMinutes)
+                            : `${totalDays} days`}
+                        </span>
                       </div>
                       <div className="flex items-center justify-between bg-red-100 px-1 py-1 rounded-lg">
                         <span className="text-sm text-gray-600 font-secondary">Used</span>
-                        <span className="text-sm font-primary font-semibold text-red-600 ">
-                          {usedDays} days
+                        <span className="text-sm font-primary font-semibold text-red-600">
+                          {isShortDayLeaveType
+                            ? formatHoursMinutes(usedHours, usedMins)
+                            : `${usedDays} days`}
                         </span>
                       </div>
                       <div className="flex items-center justify-between pt-2 border-t border-gray-100">
                         <span className="text-sm font-secondary font-medium text-gray-700">Remaining</span>
-                        <span className="text-lg font-primary font-bold text-primary">{remainingDays} days</span>
+                        <span className="text-lg font-primary font-bold text-primary">
+                          {isShortDayLeaveType
+                            ? formatHoursMinutes(remainingHours, remainingMinutes)
+                            : `${remainingDays} days`}
+                        </span>
                       </div>
                     </div>
 
@@ -484,9 +551,23 @@ export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: Em
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <div className="text-sm text-gray-900 font-secondary">
-                          {leave.days === 0.5 ? '0.5 day' : 
-                           leave.days && leave.days < 1 && leave.days > 0 ? `${leave.days.toFixed(2)} day` : 
-                           `${leave.days || 'N/A'} ${leave.days === 1 ? 'day' : 'days'}`}
+                          {(() => {
+                            // Check if this is a shortday leave type
+                            const leaveTypeName = typeof leave.leaveType === 'object' ? leave.leaveType?.name?.toLowerCase() || '' : '';
+                            const isShortDayLeaveType = leaveTypeName.includes('shortday') ||
+                              leaveTypeName.includes('short-day') ||
+                              leaveTypeName.includes('short day');
+
+                            if (isShortDayLeaveType && (leave as any).hours !== undefined) {
+                              // Display hours/minutes for shortday leave types
+                              return formatHoursMinutes((leave as any).hours, (leave as any).minutes);
+                            }
+
+                            // Display days for regular leave types
+                            return leave.days === 0.5 ? '0.5 day' :
+                              leave.days && leave.days < 1 && leave.days > 0 ? `${leave.days.toFixed(2)} day` :
+                                `${leave.days || 'N/A'} ${leave.days === 1 ? 'day' : 'days'}`;
+                          })()}
                           {leave.halfDayType && (
                             <span className="ml-2 text-xs text-purple-600 font-medium">
                               ({leave.halfDayType === 'first-half' ? 'First Half' : 'Second Half'})
@@ -612,10 +693,10 @@ export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: Em
               {/* Half-Day Selection - Only shown when halfday leave type is selected */}
               {formData.leaveType && (() => {
                 const selectedLeaveType = leaveTypes.find((type) => type._id === formData.leaveType);
-                const isHalfDay = selectedLeaveType?.name?.toLowerCase().includes('halfday') || 
-                                 selectedLeaveType?.name?.toLowerCase().includes('half-day') || 
-                                 selectedLeaveType?.name?.toLowerCase().includes('half day');
-                
+                const isHalfDay = selectedLeaveType?.name?.toLowerCase().includes('halfday') ||
+                  selectedLeaveType?.name?.toLowerCase().includes('half-day') ||
+                  selectedLeaveType?.name?.toLowerCase().includes('half day');
+
                 if (isHalfDay) {
                   return (
                     <motion.div
@@ -630,18 +711,16 @@ export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: Em
                         <motion.button
                           type="button"
                           onClick={() => setFormData({ ...formData, halfDayType: 'first-half' })}
-                          className={`p-2.5 rounded-lg border transition-all text-center ${
-                            formData.halfDayType === 'first-half'
+                          className={`p-2.5 rounded-lg border transition-all text-center ${formData.halfDayType === 'first-half'
                               ? 'border-purple-500 bg-purple-100 shadow-md'
                               : 'border-gray-200/50 bg-white/50 hover:border-gray-300 hover:bg-white/70'
-                          }`}
+                            }`}
                           whileHover={{ scale: 1.02 }}
                           whileTap={{ scale: 0.98 }}
                         >
                           <div className="flex flex-col items-center gap-1">
-                            <span className={`text-sm font-medium font-primary ${
-                              formData.halfDayType === 'first-half' ? 'text-purple-700' : 'text-gray-700'
-                            }`}>
+                            <span className={`text-sm font-medium font-primary ${formData.halfDayType === 'first-half' ? 'text-purple-700' : 'text-gray-700'
+                              }`}>
                               First Half
                             </span>
                             <span className="text-[10px] text-gray-500 font-secondary">Morning</span>
@@ -650,18 +729,16 @@ export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: Em
                         <motion.button
                           type="button"
                           onClick={() => setFormData({ ...formData, halfDayType: 'second-half' })}
-                          className={`p-2.5 rounded-lg border transition-all text-center ${
-                            formData.halfDayType === 'second-half'
+                          className={`p-2.5 rounded-lg border transition-all text-center ${formData.halfDayType === 'second-half'
                               ? 'border-purple-500 bg-purple-100 shadow-md'
                               : 'border-gray-200/50 bg-white/50 hover:border-gray-300 hover:bg-white/70'
-                          }`}
+                            }`}
                           whileHover={{ scale: 1.02 }}
                           whileTap={{ scale: 0.98 }}
                         >
                           <div className="flex flex-col items-center gap-1">
-                            <span className={`text-sm font-medium font-primary ${
-                              formData.halfDayType === 'second-half' ? 'text-purple-700' : 'text-gray-700'
-                            }`}>
+                            <span className={`text-sm font-medium font-primary ${formData.halfDayType === 'second-half' ? 'text-purple-700' : 'text-gray-700'
+                              }`}>
                               Second Half
                             </span>
                             <span className="text-[10px] text-gray-500 font-secondary">Afternoon</span>
@@ -677,10 +754,10 @@ export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: Em
               {/* Short-Day Time Selection - Only shown when shortday leave type is selected */}
               {formData.leaveType && (() => {
                 const selectedLeaveType = leaveTypes.find((type) => type._id === formData.leaveType);
-                const isShortDay = selectedLeaveType?.name?.toLowerCase().includes('shortday') || 
-                                  selectedLeaveType?.name?.toLowerCase().includes('short-day') || 
-                                  selectedLeaveType?.name?.toLowerCase().includes('short day');
-                
+                const isShortDay = selectedLeaveType?.name?.toLowerCase().includes('shortday') ||
+                  selectedLeaveType?.name?.toLowerCase().includes('short-day') ||
+                  selectedLeaveType?.name?.toLowerCase().includes('short day');
+
                 if (isShortDay) {
                   // Calculate total hours
                   let totalHours = 0;
@@ -771,35 +848,73 @@ export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: Em
                 });
 
                 if (selectedAllottedLeave) {
-                  const totalDays = selectedAllottedLeave.days || 0;
-                  const remainingDays = selectedAllottedLeave.remainingDays !== undefined
+                  // Check if this is a shortday leave type
+                  const leaveTypeName = typeof selectedAllottedLeave.leaveType === 'object'
+                    ? selectedAllottedLeave.leaveType?.name?.toLowerCase() || ''
+                    : '';
+                  const isShortDayLeaveType = leaveTypeName.includes('shortday') ||
+                    leaveTypeName.includes('short-day') ||
+                    leaveTypeName.includes('short day');
+
+                  let totalDays = selectedAllottedLeave.days || 0;
+                  let remainingDays = selectedAllottedLeave.remainingDays !== undefined
                     ? selectedAllottedLeave.remainingDays
                     : totalDays;
-                  const consumedDays = totalDays - remainingDays;
+                  let consumedDays = totalDays - remainingDays;
 
-                  return (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      className="bg-gradient-to-r from-blue-50/80 to-indigo-50/80 backdrop-blur-sm rounded-lg p-3 border border-blue-200/50"
-                    >
-                      <h3 className="text-xs font-semibold text-gray-800 mb-2 font-primary">Leave Balance</h3>
-                      <div className="grid grid-cols-3 gap-3">
-                        <div className="text-center">
-                          <div className="text-xl font-bold text-gray-800 font-primary">{totalDays}</div>
-                          <div className="text-[10px] text-gray-600 mt-0.5 font-secondary">Total</div>
+                  // For shortday leave types, use hours/minutes
+                  if (isShortDayLeaveType) {
+                    const totalHours = (selectedAllottedLeave as any).hours || 0;
+                    const totalMinutes = (selectedAllottedLeave as any).minutes || 0;
+                    const remainingHours = (selectedAllottedLeave as any).remainingHours !== undefined
+                      ? (selectedAllottedLeave as any).remainingHours
+                      : totalHours;
+                    const remainingMinutes = (selectedAllottedLeave as any).remainingMinutes !== undefined
+                      ? (selectedAllottedLeave as any).remainingMinutes
+                      : totalMinutes;
+
+                    const totalAllottedMinutes = totalHours * 60 + totalMinutes;
+                    const totalRemainingMinutes = remainingHours * 60 + remainingMinutes;
+                    const totalConsumedMinutes = totalAllottedMinutes - totalRemainingMinutes;
+                    const consumedHours = Math.floor(totalConsumedMinutes / 60);
+                    const consumedMins = totalConsumedMinutes % 60;
+
+                    return (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        className="bg-gradient-to-r from-blue-50/80 to-indigo-50/80 backdrop-blur-sm rounded-lg p-3 border border-blue-200/50"
+                      >
+                        <h3 className="text-xs font-semibold text-gray-800 mb-2 font-primary">Leave Balance</h3>
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="text-center">
+                            <div className="text-xl font-bold text-gray-800 font-primary">
+                              {isShortDayLeaveType
+                                ? formatHoursMinutes(totalHours, totalMinutes)
+                                : totalDays}
+                            </div>
+                            <div className="text-[10px] text-gray-600 mt-0.5 font-secondary">Total</div>
+                          </div>
+                          <div className="text-center">
+                            <div className="text-xl font-bold text-red-600 font-primary">
+                              {isShortDayLeaveType
+                                ? formatHoursMinutes(consumedHours, consumedMins)
+                                : consumedDays}
+                            </div>
+                            <div className="text-[10px] text-gray-600 mt-0.5 font-secondary">Consumed</div>
+                          </div>
+                          <div className="text-center">
+                            <div className="text-xl font-bold text-green-600 font-primary">
+                              {isShortDayLeaveType
+                                ? formatHoursMinutes(remainingHours, remainingMinutes)
+                                : remainingDays}
+                            </div>
+                            <div className="text-[10px] text-gray-600 mt-0.5 font-secondary">Available</div>
+                          </div>
                         </div>
-                        <div className="text-center">
-                          <div className="text-xl font-bold text-red-600 font-primary">{consumedDays}</div>
-                          <div className="text-[10px] text-gray-600 mt-0.5 font-secondary">Consumed</div>
-                        </div>
-                        <div className="text-center">
-                          <div className="text-xl font-bold text-green-600 font-primary">{remainingDays}</div>
-                          <div className="text-[10px] text-gray-600 mt-0.5 font-secondary">Available</div>
-                        </div>
-                      </div>
-                    </motion.div>
-                  );
+                      </motion.div>
+                    );
+                  }
                 }
                 return null;
               })()}
@@ -807,14 +922,14 @@ export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: Em
               {/* Date Selection */}
               {(() => {
                 const selectedLeaveType = leaveTypes.find((type) => type._id === formData.leaveType);
-                const isHalfDay = selectedLeaveType?.name?.toLowerCase().includes('halfday') || 
-                                 selectedLeaveType?.name?.toLowerCase().includes('half-day') || 
-                                 selectedLeaveType?.name?.toLowerCase().includes('half day');
-                const isShortDay = selectedLeaveType?.name?.toLowerCase().includes('shortday') || 
-                                  selectedLeaveType?.name?.toLowerCase().includes('short-day') || 
-                                  selectedLeaveType?.name?.toLowerCase().includes('short day');
+                const isHalfDay = selectedLeaveType?.name?.toLowerCase().includes('halfday') ||
+                  selectedLeaveType?.name?.toLowerCase().includes('half-day') ||
+                  selectedLeaveType?.name?.toLowerCase().includes('half day');
+                const isShortDay = selectedLeaveType?.name?.toLowerCase().includes('shortday') ||
+                  selectedLeaveType?.name?.toLowerCase().includes('short-day') ||
+                  selectedLeaveType?.name?.toLowerCase().includes('short day');
                 const isSingleDay = isHalfDay || isShortDay; // Both half-day and short-day use same date
-                
+
                 return (
                   <div className="grid grid-cols-2 gap-2">
                     <div>
@@ -827,8 +942,8 @@ export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: Em
                         onChange={(e) => {
                           const newStartDate = e.target.value;
                           // For half-day and short-day, automatically set end date to same as start date
-                          setFormData({ 
-                            ...formData, 
+                          setFormData({
+                            ...formData,
                             startDate: newStartDate,
                             ...(isSingleDay && { endDate: newStartDate })
                           });
@@ -866,28 +981,86 @@ export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: Em
               {/* Requested Days Display */}
               {formData.startDate && formData.endDate && (() => {
                 const selectedLeaveType = leaveTypes.find((type) => type._id === formData.leaveType);
-                const isHalfDay = selectedLeaveType?.name?.toLowerCase().includes('halfday') || 
-                                 selectedLeaveType?.name?.toLowerCase().includes('half-day') || 
-                                 selectedLeaveType?.name?.toLowerCase().includes('half day');
-                const isShortDay = selectedLeaveType?.name?.toLowerCase().includes('shortday') || 
-                                  selectedLeaveType?.name?.toLowerCase().includes('short-day') || 
-                                  selectedLeaveType?.name?.toLowerCase().includes('short day');
-                
+                const isHalfDay = selectedLeaveType?.name?.toLowerCase().includes('halfday') ||
+                  selectedLeaveType?.name?.toLowerCase().includes('half-day') ||
+                  selectedLeaveType?.name?.toLowerCase().includes('half day');
+                const isShortDay = selectedLeaveType?.name?.toLowerCase().includes('shortday') ||
+                  selectedLeaveType?.name?.toLowerCase().includes('short-day') ||
+                  selectedLeaveType?.name?.toLowerCase().includes('short day');
+
                 const start = new Date(formData.startDate);
                 const end = new Date(formData.endDate);
-                // For half-day, use 0.5 days; for short-day, use 0.25 days; otherwise calculate normally
-                let requestedDays: number;
-                if (isHalfDay) {
-                  requestedDays = 0.5;
-                } else if (isShortDay) {
-                  requestedDays = 0.25;
-                } else {
-                  requestedDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-                }
+                
                 const selectedAllottedLeave = leaves.find((leave) => {
                   const leaveTypeId = typeof leave.leaveType === 'object' ? leave.leaveType?._id : leave.leaveType;
                   return leave.allottedBy && leaveTypeId === formData.leaveType;
                 });
+
+                // For shortday leaves, calculate and display in hours/minutes
+                if (isShortDay && formData.shortDayFromTime && formData.shortDayToTime) {
+                  const fromTime = new Date(`2000-01-01T${formData.shortDayFromTime}`);
+                  const toTime = new Date(`2000-01-01T${formData.shortDayToTime}`);
+                  const diffMs = toTime.getTime() - fromTime.getTime();
+                  const requestedTotalMinutes = Math.floor(diffMs / (1000 * 60));
+                  const requestedHours = Math.floor(requestedTotalMinutes / 60);
+                  const requestedMinutes = requestedTotalMinutes % 60;
+
+                  const totalAllottedMinutes = ((selectedAllottedLeave as any)?.hours || 0) * 60 + ((selectedAllottedLeave as any)?.minutes || 0);
+                  const totalRemainingMinutes = ((selectedAllottedLeave as any)?.remainingHours || 0) * 60 + ((selectedAllottedLeave as any)?.remainingMinutes || 0);
+                  const isInsufficient = totalRemainingMinutes < requestedTotalMinutes;
+                  const remainingAfterRequest = totalRemainingMinutes - requestedTotalMinutes;
+                  const remainingHoursAfter = Math.floor(remainingAfterRequest / 60);
+                  const remainingMinutesAfter = remainingAfterRequest % 60;
+
+                  return (
+                    <motion.div
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className={`rounded-lg p-3 border backdrop-blur-sm ${isInsufficient
+                        ? 'bg-red-50/80 border-red-200/50'
+                        : 'bg-green-50/80 border-green-200/50'
+                        }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="text-xs font-medium text-gray-700 font-secondary">Requested Time</div>
+                          <div className={`text-xl font-bold mt-0.5 font-primary ${isInsufficient ? 'text-red-600' : 'text-green-600'
+                            }`}>
+                            {formatHoursMinutes(requestedHours, requestedMinutes)}
+                          </div>
+                        </div>
+                        {isInsufficient && (
+                          <div className="text-right">
+                            <div className="text-[10px] text-red-600 font-secondary font-medium">
+                              Insufficient
+                            </div>
+                            <div className="text-xs text-red-700 font-primary font-semibold mt-0.5">
+                              Available: {formatHoursMinutes(Math.floor(totalRemainingMinutes / 60), totalRemainingMinutes % 60)}
+                            </div>
+                          </div>
+                        )}
+                        {!isInsufficient && selectedAllottedLeave && (
+                          <div className="text-right">
+                            <div className="text-[10px] text-green-600 font-secondary font-medium">
+                              Remaining
+                            </div>
+                            <div className="text-xs text-green-700 font-primary font-semibold mt-0.5">
+                              {formatHoursMinutes(remainingHoursAfter, remainingMinutesAfter)}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </motion.div>
+                  );
+                }
+
+                // For regular leaves, calculate and display in days
+                let requestedDays: number;
+                if (isHalfDay) {
+                  requestedDays = 0.5;
+                } else {
+                  requestedDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+                }
                 const remainingDays = selectedAllottedLeave?.remainingDays !== undefined
                   ? selectedAllottedLeave.remainingDays
                   : (selectedAllottedLeave?.days || 0);
@@ -907,9 +1080,9 @@ export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: Em
                         <div className="text-xs font-medium text-gray-700 font-secondary">Requested Days</div>
                         <div className={`text-xl font-bold mt-0.5 font-primary ${isInsufficient ? 'text-red-600' : 'text-green-600'
                           }`}>
-                          {requestedDays === 0.5 ? '0.5 day' : 
-                           requestedDays < 1 && requestedDays > 0 ? `${requestedDays.toFixed(2)} day` : 
-                           `${requestedDays} ${requestedDays === 1 ? 'day' : 'days'}`}
+                          {requestedDays === 0.5 ? '0.5 day' :
+                            requestedDays < 1 && requestedDays > 0 ? `${requestedDays.toFixed(2)} day` :
+                              `${requestedDays} ${requestedDays === 1 ? 'day' : 'days'}`}
                         </div>
                       </div>
                       {isInsufficient && (
@@ -963,45 +1136,44 @@ export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: Em
                       {teamMembersOnLeave
                         .filter((member: any) => member.leaves && member.leaves.length > 0) // Additional safety check
                         .map((member) => (
-                        <div
-                          key={member._id}
-                          className="flex items-center gap-2 p-2 bg-white/60 rounded-lg border border-orange-200/30"
-                        >
-                          <UserAvatar
-                            name={member.name}
-                            image={member.profileImage}
-                            size="sm"
-                          />
-                          <div className="flex-1 min-w-0">
-                            <div className="text-xs font-semibold text-gray-800 font-primary truncate">
-                              {member.name}
-                            </div>
-                            <div className="flex flex-wrap gap-1.5 mt-1">
-                              {member.leaves.map((leave: any, idx: number) => {
-                                // Check if this is a half-day leave
-                                const isHalfDay = leave.days === 0.5 || leave.halfDayType;
-                                const halfDayLabel = leave.halfDayType === 'first-half' ? 'First Half' : 
-                                                    leave.halfDayType === 'second-half' ? 'Second Half' : '';
-                                
-                                return (
-                                  <span
-                                    key={idx}
-                                    className={`px-1.5 py-0.5 text-[10px] font-medium rounded-full font-secondary ${
-                                      leave.status === 'approved'
-                                        ? 'bg-green-100 text-green-700'
-                                        : 'bg-yellow-100 text-yellow-700'
-                                    }`}
-                                  >
-                                    {leave.leaveType}
-                                    {isHalfDay && halfDayLabel && ` (${halfDayLabel})`}
-                                    {' '}({format(new Date(leave.startDate), 'MMM dd')} - {format(new Date(leave.endDate), 'MMM dd')})
-                                  </span>
-                                );
-                              })}
+                          <div
+                            key={member._id}
+                            className="flex items-center gap-2 p-2 bg-white/60 rounded-lg border border-orange-200/30"
+                          >
+                            <UserAvatar
+                              name={member.name}
+                              image={member.profileImage}
+                              size="sm"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="text-xs font-semibold text-gray-800 font-primary truncate">
+                                {member.name}
+                              </div>
+                              <div className="flex flex-wrap gap-1.5 mt-1">
+                                {member.leaves.map((leave: any, idx: number) => {
+                                  // Check if this is a half-day leave
+                                  const isHalfDay = leave.days === 0.5 || leave.halfDayType;
+                                  const halfDayLabel = leave.halfDayType === 'first-half' ? 'First Half' :
+                                    leave.halfDayType === 'second-half' ? 'Second Half' : '';
+
+                                  return (
+                                    <span
+                                      key={idx}
+                                      className={`px-1.5 py-0.5 text-[10px] font-medium rounded-full font-secondary ${leave.status === 'approved'
+                                          ? 'bg-green-100 text-green-700'
+                                          : 'bg-yellow-100 text-yellow-700'
+                                        }`}
+                                    >
+                                      {leave.leaveType}
+                                      {isHalfDay && halfDayLabel && ` (${halfDayLabel})`}
+                                      {' '}({format(new Date(leave.startDate), 'MMM dd')} - {format(new Date(leave.endDate), 'MMM dd')})
+                                    </span>
+                                  );
+                                })}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        ))}
                     </div>
                   )}
                 </motion.div>
@@ -1077,10 +1249,10 @@ export default function EmployeeLeaveView({ initialLeaves, onLeavesUpdated }: Em
               </div>
               <div>
                 <span className="font-semibold">Days:</span>{' '}
-                {deleteModal.leave.days === 0.5 ? '0.5 day' : 
-                 deleteModal.leave.days && deleteModal.leave.days < 1 && deleteModal.leave.days > 0 
-                 ? `${deleteModal.leave.days.toFixed(2)} day${deleteModal.leave.shortDayTime ? ` (${formatTimeRange(deleteModal.leave.shortDayTime)})` : ''}` 
-                 : `${deleteModal.leave.days || 'N/A'} ${deleteModal.leave.days === 1 ? 'day' : 'days'}`}
+                {deleteModal.leave.days === 0.5 ? '0.5 day' :
+                  deleteModal.leave.days && deleteModal.leave.days < 1 && deleteModal.leave.days > 0
+                    ? `${deleteModal.leave.days.toFixed(2)} day${deleteModal.leave.shortDayTime ? ` (${formatTimeRange(deleteModal.leave.shortDayTime)})` : ''}`
+                    : `${deleteModal.leave.days || 'N/A'} ${deleteModal.leave.days === 1 ? 'day' : 'days'}`}
               </div>
               <div>
                 <span className="font-semibold">Status:</span> {deleteModal.leave.status}

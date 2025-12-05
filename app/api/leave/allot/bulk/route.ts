@@ -39,19 +39,10 @@ export async function POST(request: NextRequest) {
 
     // Process each allocation
     for (const allocation of allocations) {
-      const { userId, leaveType, days, carryForward, reason } = allocation;
-
-      if (!userId || !leaveType || !days) {
-        errors.push({
-          userId,
-          leaveType,
-          error: 'Employee, leave type, and days are required',
-        });
-        continue;
-      }
+      const { userId, leaveType, days, hours, minutes, carryForward, reason } = allocation;
 
       try {
-        // Verify leave type exists
+        // Verify leave type exists first
         const leaveTypeId = new mongoose.Types.ObjectId(leaveType);
         const leaveTypeExists = await LeaveType.findById(leaveTypeId);
         if (!leaveTypeExists) {
@@ -61,6 +52,37 @@ export async function POST(request: NextRequest) {
             error: 'Invalid leave type',
           });
           continue;
+        }
+
+        // Check if this is a shortday leave type
+        const leaveTypeName = leaveTypeExists.name?.toLowerCase() || '';
+        const isShortDayLeaveType = leaveTypeName.includes('shortday') || 
+                                     leaveTypeName.includes('short-day') || 
+                                     leaveTypeName.includes('short day');
+
+        // Validate required fields based on leave type
+        if (isShortDayLeaveType) {
+          // For shortday leave types, check if hours or minutes are provided and valid
+          const hoursValue = hours !== undefined && hours !== null ? parseInt(String(hours)) : 0;
+          const minutesValue = minutes !== undefined && minutes !== null ? parseInt(String(minutes)) : 0;
+          
+          if (!userId || !leaveType || (isNaN(hoursValue) && isNaN(minutesValue)) || (hoursValue === 0 && minutesValue === 0)) {
+            errors.push({
+              userId,
+              leaveType,
+              error: 'Employee, leave type, and hours/minutes are required for shortday leave',
+            });
+            continue;
+          }
+        } else {
+          if (!userId || !leaveType || !days) {
+            errors.push({
+              userId,
+              leaveType,
+              error: 'Employee, leave type, and days are required',
+            });
+            continue;
+          }
         }
 
         // Check if this employee already has this leave type allotted
@@ -80,17 +102,13 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        // Calculate start and end dates based on days
+        // Calculate start and end dates
         const startDate = new Date();
         const endDate = new Date();
-        endDate.setDate(startDate.getDate() + parseInt(days) - 1);
-
-        const daysValue = parseInt(days);
-        const leave = new Leave({
+        
+        const leaveData: any = {
           userId: userIdObj,
           leaveType: leaveTypeId,
-          days: daysValue,
-          remainingDays: daysValue,
           startDate,
           endDate,
           reason: reason || 'Allotted by admin/HR',
@@ -100,7 +118,32 @@ export async function POST(request: NextRequest) {
           approvedBy: allottedByObj,
           approvedAt: new Date(),
           carryForward: carryForward || false,
-        });
+        };
+
+        if (isShortDayLeaveType) {
+          // For shortday leave types, store hours and minutes
+          const hoursValue = hours !== undefined && hours !== null ? parseInt(String(hours)) : 0;
+          const minutesValue = minutes !== undefined && minutes !== null ? parseInt(String(minutes)) : 0;
+          
+          // Normalize minutes (convert to hours if >= 60)
+          const totalMinutes = hoursValue * 60 + minutesValue;
+          const normalizedHours = Math.floor(totalMinutes / 60);
+          const normalizedMinutes = totalMinutes % 60;
+          
+          leaveData.days = 0; // Set days to 0 for shortday leave types
+          leaveData.hours = normalizedHours;
+          leaveData.minutes = normalizedMinutes;
+          leaveData.remainingHours = normalizedHours;
+          leaveData.remainingMinutes = normalizedMinutes;
+        } else {
+          // For regular leave types, use days
+          endDate.setDate(startDate.getDate() + parseInt(days) - 1);
+          const daysValue = parseInt(days);
+          leaveData.days = daysValue;
+          leaveData.remainingDays = daysValue;
+        }
+
+        const leave = new Leave(leaveData);
 
         await leave.save();
         await leave.populate('userId', 'name email profileImage');

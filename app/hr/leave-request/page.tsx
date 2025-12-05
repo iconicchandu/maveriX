@@ -13,12 +13,31 @@ export default function HRLeaveRequestPage() {
 
   useEffect(() => {
     fetchLeaves();
+
+    // Refetch when page becomes visible (user navigates back)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchLeaves();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Refetch when window gains focus
+    const handleFocus = () => {
+      fetchLeaves();
+    };
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
   }, []);
 
   const fetchLeaves = async () => {
     try {
       // API already filters by userId for HR role, so we can use leaves directly
-      const res = await fetch('/api/leave');
+      const res = await fetch(`/api/leave?t=${Date.now()}`, { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } });
       const data = await res.json();
       if (res.ok) {
         setLeaves(data.leaves || []);

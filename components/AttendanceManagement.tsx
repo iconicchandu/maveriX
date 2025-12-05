@@ -530,15 +530,26 @@ export default function AttendanceManagement({ initialAttendance, isAdminOrHR = 
 
         {/* Search Bar */}
         <div className="bg-white/95 backdrop-blur-xl rounded-2xl shadow-lg border border-white/50 p-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search by employee name, email, or designation..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-secondary"
-            />
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search by employee name, email, or designation..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-secondary"
+              />
+            </div>
+            <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 rounded-lg border border-blue-200">
+              <span className="text-sm font-semibold text-gray-700 font-secondary">Total:</span>
+              <span className="text-lg font-bold text-blue-700 font-primary">
+                {dailyAttendance.employees.length}
+              </span>
+              <span className="text-xs text-gray-600 font-secondary">
+                {dailyAttendance.employees.length === 1 ? 'employee' : 'employees'}
+              </span>
+            </div>
           </div>
         </div>
 

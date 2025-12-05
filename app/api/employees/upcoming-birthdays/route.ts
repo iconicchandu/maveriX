@@ -64,7 +64,11 @@ export async function GET(request: NextRequest) {
       .sort((a: any, b: any) => a.daysUntil - b.daysUntil)
       .slice(0, 10); // Limit to 10 upcoming birthdays (regardless of month)
 
-    return NextResponse.json({ birthdays: upcomingBirthdays });
+    const response = NextResponse.json({ birthdays: upcomingBirthdays });
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    response.headers.set('Pragma', 'no-cache');
+    response.headers.set('Expires', '0');
+    return response;
   } catch (error: any) {
     console.error('Get upcoming birthdays error:', error);
     return NextResponse.json({ error: error.message || 'Server error' }, { status: 500 });

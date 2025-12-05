@@ -13,11 +13,30 @@ export default function EmployeeLeavesPage() {
 
   useEffect(() => {
     fetchLeaves();
+
+    // Refetch when page becomes visible (user navigates back)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchLeaves();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Refetch when window gains focus
+    const handleFocus = () => {
+      fetchLeaves();
+    };
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
   }, []);
 
   const fetchLeaves = async () => {
     try {
-      const res = await fetch('/api/leave');
+      const res = await fetch(`/api/leave?t=${Date.now()}`, { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } });
       const data = await res.json();
       setLeaves(data.leaves || []);
     } catch (err) {

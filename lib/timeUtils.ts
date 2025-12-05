@@ -87,3 +87,28 @@ export function formatHoursToHHMMSS(decimalHours: number): string {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
+/**
+ * Formats hours and minutes to a readable string (e.g., "28h", "28h 30m", "30m")
+ * @param hours - Number of hours
+ * @param minutes - Number of minutes
+ * @returns Formatted string (e.g., "28h", "28h 30m", "30m")
+ */
+export function formatHoursMinutes(hours?: number, minutes?: number): string {
+  const h = hours || 0;
+  const m = minutes || 0;
+  
+  if (h === 0 && m === 0) {
+    return '0h';
+  }
+  
+  if (h === 0) {
+    return `${m}m`;
+  }
+  
+  if (m === 0) {
+    return `${h}h`;
+  }
+  
+  return `${h}h ${m}m`;
+}
+

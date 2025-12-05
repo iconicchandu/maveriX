@@ -69,27 +69,61 @@ export async function GET(request: NextRequest) {
           ? leave.leaveType._id 
           : leave.leaveType;
 
-        // Calculate remaining days based on approved requests (INCLUDING penalty-related leaves, as they deduct from balance)
+        // Check if this is a shortday leave type
+        const LeaveType = (await import('@/models/LeaveType')).default;
+        const leaveTypeDoc = await LeaveType.findById(leaveTypeId);
+        const leaveTypeName = leaveTypeDoc?.name?.toLowerCase() || '';
+        const isShortDayLeaveType = leaveTypeName.includes('shortday') || 
+                                     leaveTypeName.includes('short-day') || 
+                                     leaveTypeName.includes('short day');
+
         const approvedRequests = await Leave.find({
           userId: new mongoose.Types.ObjectId(userId),
           leaveType: new mongoose.Types.ObjectId(leaveTypeId),
           status: 'approved',
           allottedBy: { $exists: false },
-          // Include penalty-related leaves in calculation as they deduct from balance
         }).lean();
 
-        const totalUsed = approvedRequests.reduce((sum: number, req: any) => sum + (req.days || 0), 0);
-        const calculatedRemainingDays = Math.max(0, (leave.days || 0) - totalUsed);
-        
-        // Always update remainingDays to ensure it reflects current state including penalties
-        leave.remainingDays = calculatedRemainingDays;
+        if (isShortDayLeaveType) {
+          // Calculate remaining hours/minutes for shortday leave types
+          let totalUsedMinutes = 0;
+          approvedRequests.forEach((req: any) => {
+            const reqHours = req.hours || 0;
+            const reqMinutes = req.minutes || 0;
+            totalUsedMinutes += reqHours * 60 + reqMinutes;
+          });
 
-        // Update in database
-        await Leave.findByIdAndUpdate(leave._id, { remainingDays: calculatedRemainingDays });
+          const totalAllottedMinutes = (leave.hours || 0) * 60 + (leave.minutes || 0);
+          const calculatedRemainingMinutes = Math.max(0, totalAllottedMinutes - totalUsedMinutes);
+          
+          // Update remaining hours and minutes
+          leave.remainingHours = Math.floor(calculatedRemainingMinutes / 60);
+          leave.remainingMinutes = calculatedRemainingMinutes % 60;
+
+          // Update in database
+          await Leave.findByIdAndUpdate(leave._id, {
+            remainingHours: leave.remainingHours,
+            remainingMinutes: leave.remainingMinutes,
+          });
+        } else {
+          // Calculate remaining days for regular leave types
+          const totalUsed = approvedRequests.reduce((sum: number, req: any) => sum + (req.days || 0), 0);
+          const calculatedRemainingDays = Math.max(0, (leave.days || 0) - totalUsed);
+          
+          // Always update remainingDays to ensure it reflects current state including penalties
+          leave.remainingDays = calculatedRemainingDays;
+
+          // Update in database
+          await Leave.findByIdAndUpdate(leave._id, { remainingDays: calculatedRemainingDays });
+        }
       }
     }
 
-    return NextResponse.json({ leaves: filteredLeaves });
+    const response = NextResponse.json({ leaves: filteredLeaves });
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    response.headers.set('Pragma', 'no-cache');
+    response.headers.set('Expires', '0');
+    return response;
   } catch (error: any) {
     console.error('Get leaves error:', error);
     return NextResponse.json({ error: error.message || 'Server error' }, { status: 500 });
@@ -132,13 +166,38 @@ export async function POST(request: NextRequest) {
     const isHalfDay = halfDayType && (halfDayType === 'first-half' || halfDayType === 'second-half');
     const isShortDay = (shortDayTime && shortDayTime.trim() !== '') || (shortDayFromTime && shortDayToTime);
     
+    // Check if leave type is shortday by name
+    const leaveTypeName = leaveTypeExists.name?.toLowerCase() || '';
+    const isShortDayLeaveType = leaveTypeName.includes('shortday') || 
+                                 leaveTypeName.includes('short-day') || 
+                                 leaveTypeName.includes('short day');
+    
     // For short-day, combine from and to times into a single string format "HH:MM-HH:MM"
     let finalShortDayTime: string | undefined;
+    let calculatedHours: number = 0;
+    let calculatedMinutes: number = 0;
+    
     if (isShortDay) {
       if (shortDayFromTime && shortDayToTime) {
         finalShortDayTime = `${shortDayFromTime}-${shortDayToTime}`;
+        const fromTime = new Date(`2000-01-01T${shortDayFromTime}`);
+        const toTime = new Date(`2000-01-01T${shortDayToTime}`);
+        const diffMs = toTime.getTime() - fromTime.getTime();
+        const totalMinutes = Math.floor(diffMs / (1000 * 60));
+        calculatedHours = Math.floor(totalMinutes / 60);
+        calculatedMinutes = totalMinutes % 60;
       } else if (shortDayTime) {
         finalShortDayTime = shortDayTime; // Backward compatibility
+        // Try to parse existing format
+        if (shortDayTime.includes('-')) {
+          const [from, to] = shortDayTime.split('-');
+          const fromTime = new Date(`2000-01-01T${from}`);
+          const toTime = new Date(`2000-01-01T${to}`);
+          const diffMs = toTime.getTime() - fromTime.getTime();
+          const totalMinutes = Math.floor(diffMs / (1000 * 60));
+          calculatedHours = Math.floor(totalMinutes / 60);
+          calculatedMinutes = totalMinutes % 60;
+        }
       }
     }
     
@@ -147,14 +206,15 @@ export async function POST(request: NextRequest) {
     if (isHalfDay) {
       days = 0.5;
     } else if (isShortDay) {
-      // Calculate days based on hours for short-day
-      if (shortDayFromTime && shortDayToTime) {
-        const fromTime = new Date(`2000-01-01T${shortDayFromTime}`);
-        const toTime = new Date(`2000-01-01T${shortDayToTime}`);
-        const hours = (toTime.getTime() - fromTime.getTime()) / (1000 * 60 * 60);
-        days = hours / 24; // Convert hours to days (e.g., 4 hours = 0.167 days)
+      // For shortday leave types, store hours/minutes instead of converting to days
+      if (isShortDayLeaveType) {
+        // Keep days as 0 for shortday leave types (we'll use hours/minutes instead)
+        days = 0;
       } else {
-        days = 0.25; // Default fallback
+        // For backward compatibility with old shortday requests
+        days = calculatedHours > 0 || calculatedMinutes > 0 
+          ? (calculatedHours + calculatedMinutes / 60) / 24 
+          : 0.25;
       }
     } else {
       days = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
@@ -176,36 +236,79 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Calculate remaining days (considering pending and approved requests)
-      let remainingDays = allottedLeave.remainingDays;
-      if (remainingDays === undefined || remainingDays === null) {
-        remainingDays = allottedLeave.days || 0;
-      }
+      // Check balance - handle shortday leave types differently
+      if (isShortDayLeaveType) {
+        // For shortday leave types, check hours/minutes balance
+        let remainingHours = allottedLeave.remainingHours !== undefined ? allottedLeave.remainingHours : (allottedLeave.hours || 0);
+        let remainingMinutes = allottedLeave.remainingMinutes !== undefined ? allottedLeave.remainingMinutes : (allottedLeave.minutes || 0);
+        
+        // Get all approved requests for this leave type
+        const approvedRequests = await Leave.find({
+          userId: userIdObj,
+          leaveType: leaveTypeId,
+          allottedBy: { $exists: false },
+          status: 'approved',
+        }).lean();
 
-      // Get all approved requests for this leave type (to calculate used balance)
-      const approvedRequests = await Leave.find({
-        userId: userIdObj,
-        leaveType: leaveTypeId,
-        allottedBy: { $exists: false },
-        status: 'approved', // Only count approved requests for balance calculation
-      }).lean();
+        // Calculate total used hours and minutes
+        let totalUsedMinutes = 0;
+        approvedRequests.forEach((req: any) => {
+          const reqHours = req.hours || 0;
+          const reqMinutes = req.minutes || 0;
+          totalUsedMinutes += reqHours * 60 + reqMinutes;
+        });
+        
+        // Add current request minutes
+        const requestedMinutes = calculatedHours * 60 + calculatedMinutes;
+        totalUsedMinutes += requestedMinutes;
+        
+        // Calculate remaining
+        const totalAllottedMinutes = (allottedLeave.hours || 0) * 60 + (allottedLeave.minutes || 0);
+        const actualRemainingMinutes = Math.max(0, totalAllottedMinutes - (totalUsedMinutes - requestedMinutes));
+        
+        // Check if balance is sufficient
+        if (actualRemainingMinutes < requestedMinutes) {
+          const remainingH = Math.floor(actualRemainingMinutes / 60);
+          const remainingM = actualRemainingMinutes % 60;
+          const requestedH = calculatedHours;
+          const requestedM = calculatedMinutes;
+          return NextResponse.json(
+            { error: `Insufficient leave balance. You have ${remainingH}h${remainingM > 0 ? ` ${remainingM}m` : ''} remaining, but requested ${requestedH}h${requestedM > 0 ? ` ${requestedM}m` : ''}.` },
+            { status: 400 }
+          );
+        }
+      } else {
+        // For regular leave types, check days balance
+        let remainingDays = allottedLeave.remainingDays;
+        if (remainingDays === undefined || remainingDays === null) {
+          remainingDays = allottedLeave.days || 0;
+        }
 
-      // Calculate total used days
-      const totalUsed = approvedRequests.reduce((sum: number, req: any) => sum + (req.days || 0), 0);
-      
-      // Calculate actual remaining days
-      const actualRemainingDays = Math.max(0, (allottedLeave.days || 0) - totalUsed);
+        // Get all approved requests for this leave type
+        const approvedRequests = await Leave.find({
+          userId: userIdObj,
+          leaveType: leaveTypeId,
+          allottedBy: { $exists: false },
+          status: 'approved',
+        }).lean();
 
-      // Check if balance is sufficient
-      if (actualRemainingDays < days) {
-        return NextResponse.json(
-          { error: `Insufficient leave balance. You have ${actualRemainingDays} days remaining, but requested ${days} days.` },
-          { status: 400 }
-        );
+        // Calculate total used days
+        const totalUsed = approvedRequests.reduce((sum: number, req: any) => sum + (req.days || 0), 0);
+        
+        // Calculate actual remaining days
+        const actualRemainingDays = Math.max(0, (allottedLeave.days || 0) - totalUsed);
+
+        // Check if balance is sufficient
+        if (actualRemainingDays < days) {
+          return NextResponse.json(
+            { error: `Insufficient leave balance. You have ${actualRemainingDays} days remaining, but requested ${days} days.` },
+            { status: 400 }
+          );
+        }
       }
     }
 
-    const leave = new Leave({
+    const leaveData: any = {
       userId,
       leaveType: leaveTypeId,
       days,
@@ -215,31 +318,44 @@ export async function POST(request: NextRequest) {
       status: 'pending', // Always pending - requires admin/HR approval
       ...(isHalfDay && { halfDayType }), // Include halfDayType if it's a half-day leave
       ...(isShortDay && finalShortDayTime && { shortDayTime: finalShortDayTime }), // Include shortDayTime if it's a short-day leave
-    });
+    };
+    
+    // For shortday leave types, store hours and minutes
+    if (isShortDayLeaveType && isShortDay) {
+      leaveData.hours = calculatedHours;
+      leaveData.minutes = calculatedMinutes;
+    }
+    
+    const leave = new Leave(leaveData);
 
     await leave.save();
     await leave.populate('userId', 'name email profileImage');
     await leave.populate('leaveType', 'name description');
 
-    // Send email notification to Admin only
-    // HR and Employee leave requests both go to Admin for approval
+    // Send email notification to Admin and HR when employee applies for leave
     const userRole = (session.user as any).role;
-    if (userRole === 'employee' || userRole === 'hr') {
+    if (userRole === 'employee') {
       try {
-        // Get only Admin emails (HR leaves also go to admin for approval)
-        const adminUsers = await User.find({
-          role: 'admin',
+        // Get all Admin and HR emails (both can approve leave requests)
+        const adminAndHRUsers = await User.find({
+          role: { $in: ['admin', 'hr'] },
           emailVerified: true,
         }).select('email').lean();
 
-        const adminEmails = adminUsers.map((user: any) => user.email).filter(Boolean);
+        const adminAndHREmails = adminAndHRUsers.map((user: any) => user.email).filter(Boolean);
 
-        if (adminEmails.length > 0) {
+        if (adminAndHREmails.length > 0) {
           const user = typeof leave.userId === 'object' && leave.userId && 'email' in leave.userId ? leave.userId as any : null;
           const leaveType = typeof leave.leaveType === 'object' && leave.leaveType && 'name' in leave.leaveType ? leave.leaveType as any : null;
 
           if (user && leaveType) {
-            await sendLeaveRequestNotificationToHR(adminEmails, {
+            // Check if this is a shortday leave type
+            const leaveTypeName = (leaveType.name as string)?.toLowerCase() || '';
+            const isShortDayLeaveType = leaveTypeName.includes('shortday') || 
+                                       leaveTypeName.includes('short-day') || 
+                                       leaveTypeName.includes('short day');
+            
+            await sendLeaveRequestNotificationToHR(adminAndHREmails, {
               employeeName: (user.name as string) || 'Employee',
               employeeEmail: (user.email as string) || '',
               profileImage: user.profileImage as string | undefined,
@@ -250,6 +366,8 @@ export async function POST(request: NextRequest) {
               endDate: format(new Date(leave.endDate), 'MMM dd, yyyy'),
               halfDayType: (leave as any).halfDayType, // Include half-day type if present
               shortDayTime: (leave as any).shortDayTime, // Include short-day time if present
+              hours: isShortDayLeaveType ? ((leave as any).hours || 0) : undefined, // Include hours for shortday leaves
+              minutes: isShortDayLeaveType ? ((leave as any).minutes || 0) : undefined, // Include minutes for shortday leaves
             });
           }
         }

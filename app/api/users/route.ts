@@ -37,7 +37,11 @@ export async function GET(request: NextRequest) {
       weeklyOffIsArray: Array.isArray(u.weeklyOff)
     })));
 
-    return NextResponse.json({ users });
+    const response = NextResponse.json({ users });
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    response.headers.set('Pragma', 'no-cache');
+    response.headers.set('Expires', '0');
+    return response;
   } catch (error: any) {
     console.error('Get users error:', error);
     return NextResponse.json({ error: error.message || 'Server error' }, { status: 500 });

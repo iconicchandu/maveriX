@@ -144,7 +144,7 @@ export default function Profile() {
 
         if (updateRes.ok) {
           setProfile(updateData.user);
-          toast.success(`Profile picture updated successfully${originalSizeKB > compressedSizeKB ? ` (compressed from ${originalSizeKB}KB to ${compressedSizeKB}KB)` : ''}`);
+          toast.success('Profile picture updated successfully');
         } else {
           toast.error(updateData.error || 'Failed to update profile picture');
           setPreviewImage(profile?.profileImage || null);

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Calendar, X, Send, Megaphone, Edit2, Trash2, BarChart3, PlusCircle, Trash2 as TrashIcon } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 import { useToast } from '@/contexts/ToastContext';
 import { useSession } from 'next-auth/react';
 import UserAvatar from './UserAvatar';
@@ -79,7 +79,12 @@ export default function AnnouncementManagement() {
   const fetchAnnouncements = useCallback(async () => {
     try {
       setFetching(true);
-      const res = await fetch('/api/announcements');
+      const res = await fetch(`/api/announcements?t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache',
+        },
+      });
       const data = await res.json();
       if (res.ok) {
         setAnnouncements(data.announcements || []);
@@ -243,14 +248,14 @@ export default function AnnouncementManagement() {
   const handleCancel = () => {
     setShowModal(false);
     setEditingAnnouncement(null);
-        setFormData({
-          title: '',
-          content: '',
-          date: format(new Date(), 'yyyy-MM-dd'),
-          hasPoll: false,
-          pollQuestion: '',
-          pollOptions: ['', ''],
-        });
+    setFormData({
+      title: '',
+      content: '',
+      date: format(new Date(), 'yyyy-MM-dd'),
+      hasPoll: false,
+      pollQuestion: '',
+      pollOptions: ['', ''],
+    });
     setError('');
   };
 
@@ -275,16 +280,18 @@ export default function AnnouncementManagement() {
   };
 
   return (
-    <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-white/50 shadow-lg">
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-lg h-full flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-shrink-0 p-5 border-b border-purple-200/50 bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500">
         <div className="flex items-center gap-3">
-          <div className="p-2 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg">
+          <div className="p-2.5 bg-white/20 backdrop-blur-sm rounded-xl shadow-lg border border-white/30">
             <Megaphone className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h2 className="text-xl font-primary font-bold text-gray-800">Announcements</h2>
-            <p className="text-xs text-gray-600 font-secondary">Manage and create announcements for employees</p>
+            <h2 className="text-lg font-primary font-bold text-white">Announcements</h2>
+            <p className="text-xs text-white/90 font-secondary mt-0.5">
+              {announcements.length} {announcements.length === 1 ? 'announcement' : 'announcements'} • Manage and create
+            </p>
           </div>
         </div>
         <motion.button
@@ -303,110 +310,134 @@ export default function AnnouncementManagement() {
             setError('');
             setShowModal(true);
           }}
-          className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg shadow-lg hover:shadow-xl transition-shadow font-secondary font-semibold"
+          className="flex items-center gap-2 px-4 py-2 bg-white/20 backdrop-blur-sm text-white rounded-lg shadow-lg hover:bg-white/30 border border-white/30 transition-all font-secondary font-semibold text-sm"
         >
-          <Plus className="w-5 h-5" />
-          <span className="hidden md:block font-secondary">Create Announcement</span>
+          <Plus className="w-4 h-4" />
+          <span className="hidden md:block font-secondary">New</span>
         </motion.button>
       </div>
 
-      {/* Announcements List */}
-      {fetching ? (
-        <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-lg p-12 flex flex-col items-center justify-center border border-white/50 ">
-          <LoadingDots size="lg" className="mb-3" />
-          <p className="text-sm text-gray-500 font-secondary">Loading announcements...</p>
-        </div>
-      ) : announcements.length === 0 ? (
-        <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-lg p-12 flex flex-col items-center justify-center border border-white/50">
-          <Megaphone className="w-16 h-16 text-gray-300 mb-4" />
-          <p className="text-lg font-primary font-semibold text-gray-600 mb-2">No announcements yet</p>
-          <p className="text-sm text-gray-500 font-secondary">Create your first announcement to get started</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-4">
-          {announcements.map((announcement, index) => (
-            <motion.div
-              key={announcement._id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.1 }}
-              className=" bg-white/80 backdrop-blur-sm rounded-xl shadow-lg p-6 border border-gray-200 hover:shadow-xl transition-shadow h-full flex flex-col"
-            >
-              <div className="flex items-start justify-between gap-4 mb-3">
-                <div className="flex items-center gap-3 flex-1">
-                  <UserAvatar
-                    name={announcement.createdBy.name}
-                    image={announcement.createdBy.profileImage}
-                    size="sm"
-                  />
-                  <div>
-                    <p className="text-sm font-primary font-semibold text-gray-800">
-                      {announcement.createdBy.name}
-                    </p>
-                    <p className="text-xs text-gray-500 font-secondary capitalize">
-                      {announcement.createdBy.role}
-                    </p>
+      {/* Announcements List - Scrollable */}
+      <div className="flex-1 overflow-y-auto p-3 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
+        {fetching ? (
+          <div className="flex flex-col items-center justify-center py-12">
+            <LoadingDots size="lg" className="mb-3" />
+            <p className="text-sm text-gray-500 font-secondary">Loading announcements...</p>
+          </div>
+        ) : announcements.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12">
+            <div className="p-4 bg-gray-100 rounded-full mb-4">
+              <Megaphone className="w-8 h-8 text-gray-400" />
+            </div>
+            <p className="text-base font-primary font-semibold text-gray-600 mb-1">No announcements yet</p>
+            <p className="text-sm text-gray-500 font-secondary">Create your first announcement to get started</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {announcements.map((announcement, index) => (
+              <motion.div
+                key={announcement._id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.05 }}
+                className="group bg-gradient-to-br from-white to-gray-50/50 rounded-lg border border-gray-200 hover:border-purple-300 hover:shadow-md transition-all duration-200 p-3 relative overflow-hidden"
+              >
+                {/* Decorative gradient bar */}
+                <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500"></div>
+                
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <div className="relative flex-shrink-0">
+                      <UserAvatar
+                        name={announcement.createdBy.name}
+                        image={announcement.createdBy.profileImage}
+                        size="sm"
+                      />
+                      <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+                        <p className="text-xs font-primary font-bold text-gray-800 truncate">
+                          {announcement.createdBy.name}
+                        </p>
+                        <span className="px-1.5 py-0.5 text-[9px] font-bold rounded-full bg-gradient-to-r from-purple-100 to-indigo-100 text-purple-700 capitalize font-secondary border border-purple-200">
+                          {announcement.createdBy.role}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <div className="flex items-center gap-0.5 text-[10px] text-gray-500 font-secondary">
+                          <Calendar className="w-2.5 h-2.5" />
+                          <span>{format(new Date(announcement.date), 'MMM dd, yyyy')}</span>
+                        </div>
+                        <span className="text-gray-300 text-[10px]">•</span>
+                        <span className="text-[10px] text-gray-500 font-secondary">
+                          {formatDistanceToNow(new Date(announcement.createdAt), { addSuffix: true })}
+                        </span>
+                        {announcement.views && announcement.views.length > 0 && (
+                          <>
+                            <span className="text-gray-300 text-[10px]">•</span>
+                            <span className="text-[10px] text-gray-500 font-secondary">
+                              {announcement.views.reduce((sum, v) => sum + v.viewCount, 0)} views
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </div>
                   </div>
+                  {canEditOrDelete(announcement) && (
+                    <div className="flex items-center gap-0.5 flex-shrink-0">
+                      <motion.button
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={() => handleEdit(announcement)}
+                        className="p-1 text-purple-600 hover:bg-purple-50 rounded transition-colors opacity-0 group-hover:opacity-100"
+                        title="Edit announcement"
+                      >
+                        <Edit2 className="w-3 h-3" />
+                      </motion.button>
+                      <motion.button
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={() => setDeleteModal({ isOpen: true, announcement })}
+                        className="p-1 text-red-600 hover:bg-red-50 rounded transition-colors opacity-0 group-hover:opacity-100"
+                        title="Delete announcement"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </motion.button>
+                    </div>
+                  )}
                 </div>
-                {canEditOrDelete(announcement) && (
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <motion.button
-                      whileHover={{ scale: 1.1 }}
-                      whileTap={{ scale: 0.9 }}
-                      onClick={() => handleEdit(announcement)}
-                      className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                      title="Edit announcement"
-                    >
-                      <Edit2 className="w-5 h-5" />
-                    </motion.button>
-                    <motion.button
-                      whileHover={{ scale: 1.1 }}
-                      whileTap={{ scale: 0.9 }}
-                      onClick={() => setDeleteModal({ isOpen: true, announcement })}
-                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                      title="Delete announcement"
-                    >
-                      <Trash2 className="w-5 h-5" />
-                    </motion.button>
-                  </div>
-                )}
-              </div>
-              <div className="flex-1 flex flex-col">
-                <h3 className="text-xl font-primary font-bold text-gray-800 mb-2 line-clamp-1 overflow-hidden">
-                  {announcement.title}
-                </h3>
-                <p className="text-sm text-gray-600 font-secondary mb-4 flex-1 line-clamp-1 overflow-hidden">
-                  {announcement.content.split('\n')[0] || announcement.content.substring(0, 100)}
-                </p>
-                <div className="flex items-center justify-between text-xs text-gray-500 font-secondary mt-auto">
-                  <div className="flex items-center gap-1">
-                    <Calendar className="w-4 h-4" />
-                    <span>{format(new Date(announcement.date), 'MMM dd, yyyy')}</span>
-                  </div>
+                <div className="space-y-1.5">
+                  <h3 className="text-sm font-primary font-bold text-gray-900 line-clamp-2 leading-tight">
+                    {announcement.title}
+                  </h3>
+                  <p className="text-xs text-gray-600 font-secondary line-clamp-2 leading-relaxed">
+                    {announcement.content.split('\n')[0] || announcement.content.substring(0, 100)}
+                  </p>
                   {announcement.poll && (
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center gap-1 text-blue-600">
-                        <BarChart3 className="w-4 h-4" />
-                        <span>Poll</span>
+                    <div className="flex items-center gap-1.5 pt-1.5 border-t border-gray-100">
+                      <div className="flex items-center gap-1 px-2 py-1 bg-gradient-to-r from-purple-50 to-indigo-50 text-purple-700 rounded border border-purple-200">
+                        <BarChart3 className="w-3 h-3" />
+                        <span className="text-[10px] font-bold font-secondary">Interactive Poll</span>
                       </div>
                       {(session?.user as any)?.role === 'admin' && (
                         <motion.button
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
                           onClick={() => setShowPollResponses(announcement)}
-                          className="px-3 py-1 bg-blue-500 text-white text-xs rounded-lg hover:bg-blue-600 transition-colors font-semibold"
+                          className="px-2 py-1 bg-gradient-to-r from-purple-500 to-indigo-500 text-white text-[10px] rounded hover:from-purple-600 hover:to-indigo-600 transition-all font-semibold font-secondary shadow-sm"
                         >
-                          See Response
+                          View Responses
                         </motion.button>
                       )}
                     </div>
                   )}
                 </div>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      )}
+              </motion.div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Create Announcement Modal */}
       {mounted && createPortal(

@@ -8,6 +8,7 @@ import { useToast } from '@/contexts/ToastContext';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
 import UserAvatar from './UserAvatar';
 import LoadingDots from './LoadingDots';
+import { formatHoursMinutes } from '@/lib/timeUtils';
 
 interface Leave {
   _id: string;
@@ -24,6 +25,8 @@ interface Leave {
   startDate: string;
   endDate: string;
   days: number;
+  hours?: number;
+  minutes?: number;
   reason: string;
   status: 'pending' | 'approved' | 'rejected';
   allottedBy?: {
@@ -267,7 +270,19 @@ export default function AllottedLeavesList({ leaves, employees, onRefresh, onEdi
                         {typeof leave.leaveType === 'object' ? leave.leaveType?.name : leave.leaveType}
                       </span>
                       <span className="text-xs font-semibold text-primary font-primary">
-                        {leave.days || 'N/A'} {leave.days === 1 ? 'day' : 'days'}
+                        {(() => {
+                          // Check if this is a shortday leave type
+                          const leaveTypeName = typeof leave.leaveType === 'object' ? leave.leaveType?.name?.toLowerCase() || '' : '';
+                          const isShortDayLeaveType = leaveTypeName.includes('shortday') || 
+                                                       leaveTypeName.includes('short-day') || 
+                                                       leaveTypeName.includes('short day');
+                          
+                          if (isShortDayLeaveType && leave.hours !== undefined) {
+                            return formatHoursMinutes(leave.hours, leave.minutes);
+                          }
+                          
+                          return `${leave.days || 'N/A'} ${leave.days === 1 ? 'day' : 'days'}`;
+                        })()}
                     </span>
                       <button
                         onClick={() => handleDeleteClick(leave)}
@@ -306,7 +321,21 @@ export default function AllottedLeavesList({ leaves, employees, onRefresh, onEdi
                   : deleteModal.leave.leaveType}
               </div>
               <div>
-                <span className="font-semibold">Days:</span> {deleteModal.leave.days || 'N/A'}
+                <span className="font-semibold">Days:</span>{' '}
+                {(() => {
+                  const leaveTypeName = typeof deleteModal.leave.leaveType === 'object' 
+                    ? deleteModal.leave.leaveType?.name?.toLowerCase() || '' 
+                    : '';
+                  const isShortDayLeaveType = leaveTypeName.includes('shortday') || 
+                                               leaveTypeName.includes('short-day') || 
+                                               leaveTypeName.includes('short day');
+                  
+                  if (isShortDayLeaveType && deleteModal.leave.hours !== undefined) {
+                    return formatHoursMinutes(deleteModal.leave.hours, deleteModal.leave.minutes);
+                  }
+                  
+                  return deleteModal.leave.days || 'N/A';
+                })()}
               </div>
               <div>
                 <span className="font-semibold">Dates:</span>{' '}

@@ -198,6 +198,8 @@ interface LeaveRequestEmailData {
   endDate: string;
   halfDayType?: 'first-half' | 'second-half';
   shortDayTime?: string;
+  hours?: number;
+  minutes?: number;
 }
 
 export async function sendLeaveRequestNotificationToHR(
@@ -237,16 +239,38 @@ export async function sendLeaveRequestNotificationToHR(
                     <td style="padding: 8px 0; color: #5f6368; font-size: 14px; font-weight: 600;">Leave Type:</td>
                     <td style="padding: 8px 0; color: #202124; font-size: 14px; text-align: right;">${data.leaveType}</td>
                   </tr>
+                  ${data.shortDayTime && data.hours !== undefined ? (() => {
+                    // Parse the shortDayTime string (format: "HH:MM-HH:MM")
+                    const timeParts = data.shortDayTime.includes('-') ? data.shortDayTime.split('-') : [data.shortDayTime];
+                    const fromTime = timeParts[0] ? formatTime12Hour(timeParts[0].trim()) : '';
+                    const toTime = timeParts[1] ? formatTime12Hour(timeParts[1].trim()) : '';
+                    const hoursDisplay = data.hours || 0;
+                    const minutesDisplay = data.minutes || 0;
+                    const totalHoursDisplay = minutesDisplay > 0 ? `${hoursDisplay}h ${minutesDisplay}m` : `${hoursDisplay}h`;
+                    return `
+                  <tr>
+                    <td style="padding: 8px 0; color: #5f6368; font-size: 14px; font-weight: 600;">From Time:</td>
+                    <td style="padding: 8px 0; color: #202124; font-size: 14px; text-align: right; font-weight: 600;">${fromTime}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0; color: #5f6368; font-size: 14px; font-weight: 600;">To Time:</td>
+                    <td style="padding: 8px 0; color: #202124; font-size: 14px; text-align: right; font-weight: 600;">${toTime}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0; color: #5f6368; font-size: 14px; font-weight: 600;">Total Hours:</td>
+                    <td style="padding: 8px 0; color: #202124; font-size: 14px; text-align: right; font-weight: 600;">${totalHoursDisplay}</td>
+                  </tr>
+                  `;
+                  })() : `
                   <tr>
                     <td style="padding: 8px 0; color: #5f6368; font-size: 14px; font-weight: 600;">Total Days:</td>
                     <td style="padding: 8px 0; color: #202124; font-size: 14px; text-align: right; font-weight: 600;">${
                       data.days === 0.5 && data.halfDayType 
                         ? (data.halfDayType === 'first-half' ? 'First Half' : 'Second Half')
-                        : data.days && data.days < 1 && data.days > 0 && data.shortDayTime
-                        ? `Short Day (${formatTimeRange(data.shortDayTime)}) - ${data.days.toFixed(2)} day`
                         : `${data.days} ${data.days === 1 ? 'day' : 'days'}`
                     }</td>
                   </tr>
+                  `}
                   <tr>
                     <td style="padding: 8px 0; color: #5f6368; font-size: 14px; font-weight: 600;">Start Date:</td>
                     <td style="padding: 8px 0; color: #202124; font-size: 14px; text-align: right;">${data.startDate}</td>
@@ -310,6 +334,8 @@ interface LeaveStatusEmailData {
   approvedBy?: string;
   halfDayType?: 'first-half' | 'second-half';
   shortDayTime?: string;
+  hours?: number;
+  minutes?: number;
 }
 
 export async function sendLeaveStatusNotificationToEmployee(
@@ -355,6 +381,29 @@ export async function sendLeaveStatusNotificationToEmployee(
                     <td style="padding: 8px 0; color: #5f6368; font-size: 14px; font-weight: 600;">Leave Type:</td>
                     <td style="padding: 8px 0; color: #202124; font-size: 14px; text-align: right;">${data.leaveType}</td>
                   </tr>
+                  ${data.shortDayTime && data.hours !== undefined ? (() => {
+                    // Parse the shortDayTime string (format: "HH:MM-HH:MM")
+                    const timeParts = data.shortDayTime.includes('-') ? data.shortDayTime.split('-') : [data.shortDayTime];
+                    const fromTime = timeParts[0] ? formatTime12Hour(timeParts[0].trim()) : '';
+                    const toTime = timeParts[1] ? formatTime12Hour(timeParts[1].trim()) : '';
+                    const hoursDisplay = data.hours || 0;
+                    const minutesDisplay = data.minutes || 0;
+                    const totalHoursDisplay = minutesDisplay > 0 ? `${hoursDisplay}h ${minutesDisplay}m` : `${hoursDisplay}h`;
+                    return `
+                  <tr>
+                    <td style="padding: 8px 0; color: #5f6368; font-size: 14px; font-weight: 600;">From Time:</td>
+                    <td style="padding: 8px 0; color: #202124; font-size: 14px; text-align: right; font-weight: 600;">${fromTime}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0; color: #5f6368; font-size: 14px; font-weight: 600;">To Time:</td>
+                    <td style="padding: 8px 0; color: #202124; font-size: 14px; text-align: right; font-weight: 600;">${toTime}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0; color: #5f6368; font-size: 14px; font-weight: 600;">Total Hours:</td>
+                    <td style="padding: 8px 0; color: #202124; font-size: 14px; text-align: right; font-weight: 600;">${totalHoursDisplay}</td>
+                  </tr>
+                  `;
+                  })() : `
                   <tr>
                     <td style="padding: 8px 0; color: #5f6368; font-size: 14px; font-weight: 600;">Total Days:</td>
                     <td style="padding: 8px 0; color: #202124; font-size: 14px; text-align: right; font-weight: 600;">${
@@ -363,6 +412,7 @@ export async function sendLeaveStatusNotificationToEmployee(
                         : `${data.days} ${data.days === 1 ? 'day' : 'days'}`
                     }</td>
                   </tr>
+                  `}
                   <tr>
                     <td style="padding: 8px 0; color: #5f6368; font-size: 14px; font-weight: 600;">Start Date:</td>
                     <td style="padding: 8px 0; color: #202124; font-size: 14px; text-align: right;">${data.startDate}</td>

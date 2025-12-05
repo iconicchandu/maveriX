@@ -7,6 +7,10 @@ export interface ILeave extends Document {
   leaveType: mongoose.Types.ObjectId; // Reference to LeaveType
   days: number; // Number of days (0.5 for half-day, less than 1 for short-day)
   remainingDays?: number; // Remaining days for allotted leaves (deducted when approved)
+  hours?: number; // Hours for shortday leave (e.g., 28 for 28 hours)
+  minutes?: number; // Minutes for shortday leave (e.g., 30 for 30 minutes)
+  remainingHours?: number; // Remaining hours for allotted shortday leaves
+  remainingMinutes?: number; // Remaining minutes for allotted shortday leaves
   carryForward?: boolean; // Whether this leave is carried forward from previous year
   startDate: Date;
   endDate: Date;
@@ -38,7 +42,17 @@ const LeaveSchema: Schema = new Schema(
     days: {
       type: Number,
       required: true,
-      min: 0.1, // Allow fractional days for half-day and short-day leaves
+      validate: {
+        validator: function(value: number) {
+          // Allow 0 if hours/minutes are present (shortday leave types)
+          if (value === 0) {
+            return (this as any).hours !== undefined || (this as any).minutes !== undefined;
+          }
+          // For regular leaves, require at least 0.1
+          return value >= 0.1;
+        },
+        message: 'Days must be at least 0.1 for regular leaves, or 0 is allowed only when hours/minutes are present for shortday leaves'
+      }
     },
     halfDayType: {
       type: String,
@@ -50,6 +64,24 @@ const LeaveSchema: Schema = new Schema(
     remainingDays: {
       type: Number,
       min: 0,
+    },
+    hours: {
+      type: Number,
+      min: 0,
+    },
+    minutes: {
+      type: Number,
+      min: 0,
+      max: 59,
+    },
+    remainingHours: {
+      type: Number,
+      min: 0,
+    },
+    remainingMinutes: {
+      type: Number,
+      min: 0,
+      max: 59,
     },
     carryForward: {
       type: Boolean,

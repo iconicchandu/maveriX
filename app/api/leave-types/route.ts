@@ -20,7 +20,11 @@ export async function GET(request: NextRequest) {
       .sort({ name: 1 })
       .lean();
 
-    return NextResponse.json({ leaveTypes });
+    const response = NextResponse.json({ leaveTypes });
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    response.headers.set('Pragma', 'no-cache');
+    response.headers.set('Expires', '0');
+    return response;
   } catch (error: any) {
     console.error('Get leave types error:', error);
     return NextResponse.json({ error: error.message || 'Server error' }, { status: 500 });
