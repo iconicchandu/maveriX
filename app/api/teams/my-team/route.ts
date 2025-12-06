@@ -35,10 +35,17 @@ export async function GET(request: NextRequest) {
       .populate('members', 'name email profileImage mobileNumber')
       .sort({ createdAt: -1 });
 
-    return NextResponse.json({ teams });
+    const response = NextResponse.json({ teams });
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+    response.headers.set('Pragma', 'no-cache');
+    response.headers.set('Expires', '0');
+    response.headers.set('Surrogate-Control', 'no-store');
+    return response;
   } catch (error: any) {
     console.error('Get my teams error:', error);
-    return NextResponse.json({ error: error.message || 'Server error' }, { status: 500 });
+    const errorResponse = NextResponse.json({ error: error.message || 'Server error' }, { status: 500 });
+    errorResponse.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+    return errorResponse;
   }
 }
 

@@ -52,6 +52,51 @@ export async function createNotification(data: {
 
     await notification.save();
 
+    // Send push notification
+    try {
+      const { sendPushNotificationToUser } = await import('@/lib/pushNotificationManager');
+      await sendPushNotificationToUser(userId, {
+        title: data.title,
+        body: data.message,
+        icon: '/assets/mobileicon.jpg',
+        badge: '/assets/maverixicon.png',
+        tag: `notification-${notification._id}`,
+        data: {
+          notificationId: (notification._id as mongoose.Types.ObjectId).toString(),
+          type: data.type,
+          leaveId: data.leaveId?.toString(),
+          feedId: data.feedId?.toString(),
+          mentionedBy: data.mentionedBy?.toString(),
+        },
+      });
+    } catch (pushError) {
+      // Log but don't fail - push notifications are non-critical
+      console.error('Error sending push notification:', pushError);
+    }
+
+    // Trigger immediate browser notification via API endpoint
+    // This will be picked up by the client-side notification listener
+    try {
+      // Use a non-blocking fetch to trigger notification on client
+      fetch('/api/push/trigger', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: userId.toString(),
+          notificationId: (notification._id as mongoose.Types.ObjectId).toString(),
+          title: data.title,
+          body: data.message,
+          type: data.type,
+          leaveId: data.leaveId?.toString(),
+          feedId: data.feedId?.toString(),
+        }),
+      }).catch(() => {
+        // Ignore errors - this is non-critical
+      });
+    } catch (error) {
+      // Ignore errors
+    }
+
     return notification;
   } catch (error: any) {
     console.error('Error creating notification:', error);

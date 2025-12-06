@@ -40,10 +40,17 @@ export async function GET(request: NextRequest) {
       .populate('mentionedBy', 'name email profileImage')
       .lean();
 
-    return NextResponse.json({ notifications });
+    const response = NextResponse.json({ notifications });
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+    response.headers.set('Pragma', 'no-cache');
+    response.headers.set('Expires', '0');
+    response.headers.set('Surrogate-Control', 'no-store');
+    return response;
   } catch (error: any) {
     console.error('Get notifications error:', error);
-    return NextResponse.json({ error: error.message || 'Server error' }, { status: 500 });
+    const errorResponse = NextResponse.json({ error: error.message || 'Server error' }, { status: 500 });
+    errorResponse.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+    return errorResponse;
   }
 }
 

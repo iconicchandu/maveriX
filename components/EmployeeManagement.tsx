@@ -153,9 +153,14 @@ export default function EmployeeManagement({ initialEmployees, canChangeRole = t
       console.log('[EmployeeManagement] weeklyOff being sent:', requestBody.weeklyOff);
       console.log('[EmployeeManagement] clockInTime being sent:', requestBody.clockInTime);
 
-      const res = await fetch(url, {
+      const cacheBustUrl = `${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`;
+      const res = await fetch(cacheBustUrl, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache',
+        },
+        cache: 'no-store',
         body: JSON.stringify(requestBody),
       });
 
@@ -229,7 +234,11 @@ export default function EmployeeManagement({ initialEmployees, canChangeRole = t
     setDeleting(true);
 
     try {
-      const res = await fetch(`/api/users/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/users/${id}?t=${Date.now()}`, { 
+        method: 'DELETE',
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' },
+      });
       const data = await res.json();
 
       if (!res.ok) {
@@ -259,7 +268,7 @@ export default function EmployeeManagement({ initialEmployees, canChangeRole = t
   // Fetch fresh employee data from server
   const fetchEmployees = async () => {
     try {
-      const res = await fetch('/api/users', {
+      const res = await fetch(`/api/users?t=${Date.now()}`, {
         cache: 'no-store',
         headers: {
           'Cache-Control': 'no-cache',
@@ -868,19 +877,23 @@ export default function EmployeeManagement({ initialEmployees, canChangeRole = t
         message="Are you sure you want to delete this employee?"
         details={
           deleteModal.employee ? (
-            <div className="space-y-1">
-              <div>
-                <span className="font-semibold">Name:</span> {deleteModal.employee.name}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-gray-500">Name</span>
+                <span className="text-sm font-semibold text-gray-900">{deleteModal.employee.name}</span>
               </div>
-              <div>
-                <span className="font-semibold">Email:</span> {deleteModal.employee.email}
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-gray-500">Email</span>
+                <span className="text-sm font-semibold text-gray-900 truncate ml-2">{deleteModal.employee.email}</span>
               </div>
-              <div>
-                <span className="font-semibold">Role:</span> {deleteModal.employee.role}
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-gray-500">Role</span>
+                <span className="text-sm font-semibold text-gray-900 capitalize">{deleteModal.employee.role}</span>
               </div>
               {deleteModal.employee.designation && (
-                <div>
-                  <span className="font-semibold">Designation:</span> {deleteModal.employee.designation}
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-gray-500">Designation</span>
+                  <span className="text-sm font-semibold text-gray-900">{deleteModal.employee.designation}</span>
                 </div>
               )}
             </div>

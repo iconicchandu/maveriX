@@ -120,13 +120,16 @@ export async function GET(request: NextRequest) {
     }
 
     const response = NextResponse.json({ leaves: filteredLeaves });
-    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
     response.headers.set('Pragma', 'no-cache');
     response.headers.set('Expires', '0');
+    response.headers.set('Surrogate-Control', 'no-store');
     return response;
   } catch (error: any) {
     console.error('Get leaves error:', error);
-    return NextResponse.json({ error: error.message || 'Server error' }, { status: 500 });
+    const errorResponse = NextResponse.json({ error: error.message || 'Server error' }, { status: 500 });
+    errorResponse.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+    return errorResponse;
   }
 }
 
@@ -336,13 +339,14 @@ export async function POST(request: NextRequest) {
     const userRole = (session.user as any).role;
     if (userRole === 'employee') {
       try {
-        // Get all Admin and HR emails (both can approve leave requests)
+        // Get all Admin and HR users (both can approve leave requests)
         const adminAndHRUsers = await User.find({
           role: { $in: ['admin', 'hr'] },
           emailVerified: true,
-        }).select('email').lean();
+        }).select('_id email').lean();
 
         const adminAndHREmails = adminAndHRUsers.map((user: any) => user.email).filter(Boolean);
+        const adminAndHRIds = adminAndHRUsers.map((user: any) => user._id.toString()).filter(Boolean);
 
         if (adminAndHREmails.length > 0) {
           const user = typeof leave.userId === 'object' && leave.userId && 'email' in leave.userId ? leave.userId as any : null;
@@ -369,6 +373,36 @@ export async function POST(request: NextRequest) {
               hours: isShortDayLeaveType ? ((leave as any).hours || 0) : undefined, // Include hours for shortday leaves
               minutes: isShortDayLeaveType ? ((leave as any).minutes || 0) : undefined, // Include minutes for shortday leaves
             });
+
+            // Send push notifications to all admin and HR users
+            try {
+              const { sendPushNotificationToUsers } = await import('@/lib/pushNotificationManager');
+              const employeeName = (user.name as string) || 'An employee';
+              const daysText = leave.days === 0.5 
+                ? '0.5-day' 
+                : leave.days < 1 
+                ? `${leave.days.toFixed(2)}-day` 
+                : `${leave.days}-day`;
+              const startDate = format(new Date(leave.startDate), 'MMM dd, yyyy');
+              const endDate = format(new Date(leave.endDate), 'MMM dd, yyyy');
+              const dateText = startDate === endDate ? startDate : `${startDate} - ${endDate}`;
+              
+              await sendPushNotificationToUsers(adminAndHRIds, {
+                title: 'New Leave Request',
+                body: `${employeeName} requested ${daysText} leave for ${dateText}`,
+                icon: '/assets/mobileicon.jpg',
+                badge: '/assets/maverixicon.png',
+                tag: `leave-request-${leave._id}`,
+                data: {
+                  leaveId: (leave._id as mongoose.Types.ObjectId).toString(),
+                  type: 'leave_request',
+                  url: '/hr/leave-request',
+                },
+              });
+            } catch (pushError) {
+              // Log but don't fail - push notifications are non-critical
+              console.error('Error sending push notification for leave request:', pushError);
+            }
           }
         }
       } catch (emailError) {

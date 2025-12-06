@@ -69,13 +69,42 @@ export default function NotificationDropdown({ onClose }: NotificationDropdownPr
   const fetchNotifications = async () => {
     try {
       // Always fetch 10 most recent notifications (not dismissed)
-      const res = await fetch('/api/notifications?limit=10&includeDismissed=false');
+      const res = await fetch(`/api/notifications?limit=10&includeDismissed=false&t=${Date.now()}`);
       const data = await res.json();
       if (res.ok) {
         // Ensure we only show 10 notifications
-        const notifications = (data.notifications || []).slice(0, 10);
-        setNotifications(notifications);
-        setUnreadCount(notifications.filter((n: Notification) => !n.read).length || 0);
+        const previousNotifications = notifications;
+        const newNotifications = (data.notifications || []).slice(0, 10);
+        
+        // Check for new unread notifications to show push notification
+        if (previousNotifications.length > 0) {
+          const previousIds = new Set(previousNotifications.map((n: Notification) => n._id));
+          const newUnreadNotifications = newNotifications.filter(
+            (n: Notification) => !n.read && !previousIds.has(n._id)
+          );
+          
+          // Show push notification for new unread notifications
+          if (newUnreadNotifications.length > 0 && 'Notification' in window && Notification.permission === 'granted') {
+            newUnreadNotifications.forEach((notification: Notification) => {
+              // Use direct Notification API
+              new Notification(notification.title, {
+                body: notification.message,
+                icon: '/assets/mobileicon.jpg',
+                badge: '/assets/maverixicon.png',
+                tag: `notification-${notification._id}`,
+                data: {
+                  notificationId: notification._id,
+                  type: notification.type,
+                  url: notification.type === 'mention' ? '/employee/feed' : 
+                       (notification.type === 'leave_approved' || notification.type === 'leave_rejected') ? '/employee/leaves' : '/',
+                },
+              });
+            });
+          }
+        }
+        
+        setNotifications(newNotifications);
+        setUnreadCount(newNotifications.filter((n: Notification) => !n.read).length || 0);
       }
     } catch (err) {
       console.error('Error fetching notifications:', err);

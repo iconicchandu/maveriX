@@ -91,7 +91,7 @@ export async function GET() {
       }).then(users => users.length),
     ]);
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       totalEmployees,
       employeeCount,
       hrCount,
@@ -100,9 +100,16 @@ export async function GET() {
       onLeaveToday: onLeaveCount,
       weeklyOffToday: weeklyOffCount,
     });
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+    response.headers.set('Pragma', 'no-cache');
+    response.headers.set('Expires', '0');
+    response.headers.set('Surrogate-Control', 'no-store');
+    return response;
   } catch (error) {
     console.error('Error fetching HR stats:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    const errorResponse = NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    errorResponse.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+    return errorResponse;
   }
 }
 
