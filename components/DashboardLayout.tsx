@@ -20,6 +20,7 @@ import {
   IconUserCircle,
   IconMessage,
   IconCalendarEvent,
+  IconGift,
 } from '@tabler/icons-react';
 import Logo from './Logo';
 import UserAvatar from './UserAvatar';
@@ -110,6 +111,7 @@ export default function DashboardLayout({ children, role }: DashboardLayoutProps
     { name: 'Leave Management', href: '/hr/leaves', icon: IconCalendar },
     { name: 'Attendance', href: '/hr/attendance', icon: IconClock },
     { name: 'Finance Reports', href: '/hr/finance', icon: IconCurrencyDollar },
+    { name: 'Wishing', href: '/hr/wishing', icon: IconGift },
     { name: 'Profile', href: '/hr/profile', icon: IconUserCircle },
   ];
 
