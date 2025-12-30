@@ -380,7 +380,7 @@ export default function EmployeeDashboard() {
         <div className="space-y-6 p-4 md:p-6">
           {/* Logo and Action Buttons - Mobile Only */}
           <div className="flex items-center justify-between md:hidden mb-4">
-            <LogoWhite size="md" />
+            <Logo size="md" />
             <div className="flex items-center gap-2">
               {showAnnouncementButton && (
                 <motion.button
